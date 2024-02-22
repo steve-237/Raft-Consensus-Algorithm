@@ -10,7 +10,8 @@ class RaftNode {
         this.leaderId = null;
         this.leaderIsAvailable = false;
         this.nodes = [];
-        this.log = [];;
+        this.log = [];
+        this.newLogEntry = null;
         this.votesReceived = 0;
         this.voteResquestReceived = false;
         this.electionTimer = null;
@@ -108,15 +109,18 @@ class RaftNode {
                 try {
                     await axios.post(`http://localhost:300${node}/receive-heartbeat`, {
                         term: this.currentTerm,
-                        leaderId: this.id
+                        leaderId: this.id,
+                        newLogEntry: this.newLogEntry
                     }).then((response) => {
                         console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
                         console.log(response.data);
+                        
                     });
                 } catch (error) {
                     console.error(`Error sending heartbeat to ${node}:`, error.message);
                 }
             }
+            this.newLogEntry = null;
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
     }
@@ -135,21 +139,9 @@ class RaftNode {
     appendLogEntry(request) {
         if (this.state === 'leader') {
             const index = this.log.length + 1;
-            const newLogEntry = new LogEntry(index, this.currentTerm, request);
-            this.log.push(newLogEntry);
+            this.newLogEntry = new LogEntry(index, this.currentTerm, request);
+            this.log.push(this.newLogEntry);
             console.log(this.log);
-        }
-    }
-
-    replicateLog(logEntry) {
-        for (const nodeId of this.nodes) {
-            axios.post(`http://localhost:300${nodeId}/replicate-log`, logEntry)
-                .then(response => {
-                    console.log(`Log entry replicated to Node ${nodeId}:`, response.data);
-                })
-                .catch(error => {
-                    console.error(`Error replicating log entry to Node ${nodeId}:`, error.message);
-                });
         }
     }
 

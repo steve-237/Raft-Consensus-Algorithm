@@ -47,10 +47,15 @@ app.post('/requestVote', (req, res) => {
 });
 
 app.post('/receive-heartbeat', (req, res) => {
-    const { term, leaderId } = req.body;
+    const { term, leaderId, newLogEntry } = req.body;
     try {
         console.log("Heartbeat received from Node" + leaderId + " at term " + term);
         console.log(`[Node${raftNode.id}] currentTerm = ${raftNode.currentTerm}`);
+
+        if(newLogEntry !== null){
+            raftNode.log.push(newLogEntry);
+            console.log(raftNode.log);
+        }
 
         if (term !== raftNode.currentTerm) {
             raftNode.currentTerm = term;
@@ -65,15 +70,10 @@ app.post('/receive-heartbeat', (req, res) => {
 
 //append a new log after receiving a request from a client
 app.post('/append-log', (req, res) => {
-    if (raftNode.state !== 'leader') {
-        res.status(403).send('This node is not the leader');
-        return;
-    }
-
-    const request = req.body;
-    raftNode.appendLogEntry(request)
-    console.log(request);
-})
+    const data = req.body;
+    raftNode.appendLogEntry(data);
+    res.status(200).send('success');
+});
 
 app.listen(3000 + NODE_ID, () => {
     console.log(`Node running on port ${3000 + NODE_ID}`);

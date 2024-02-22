@@ -1,24 +1,31 @@
 const express = require('express'),
+    multer = require('multer'),
     httpProxy = require('http-proxy'),
     proxy = httpProxy.createProxyServer({}),
     axios = require('axios'),
     app = express(),
     port = 3000;
 
-app.use(express.json());
-
-app.all('*', function (req, res) {
+app.all('*', async function (req, res) {
     console.log('Request', req.protocol, req.method, req.url);
 
     if (req.method === 'POST') {
         let body = '';
+
         req.on('data', chunk => {
             console.log("Chunk start:" + chunk + ": Chunk end.");
             body += chunk.toString();
         });
         req.on('end', async () => {
-            const data = body.toString();
-            console.log(data);
+            const data = {
+                method: req.method,
+                url: req.originalUrl,
+                body: body,
+                params: req.params,
+                query: req.query,
+                headers: req.headers,
+                timestamp: new Date().toISOString()
+            };
             console.log('Data to be processed with Raft:', data);
 
             try {
@@ -26,13 +33,8 @@ app.all('*', function (req, res) {
                 console.log('Leader ID:', leaderId);
 
                 const response = await sendToLeader(leaderId, data);
+                console.log("Reponse " + response);
 
-                if (response.status === 200) {
-                    proxy.web(req, res, { target: `${req.protocol}://${req.hostname}` });
-                } else {
-                    console.error('Error processing command with Raft:', response.error);
-                    res.status(500).send('Error processing command with Raft');
-                }
             } catch (error) {
                 console.error('Error processing command with Raft in the proxy file:', error.message);
                 res.status(500).send('Error processing command with Raft');
