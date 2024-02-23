@@ -11,10 +11,15 @@ class RaftNode {
         this.leaderIsAvailable = false;
         this.nodes = [];
         this.log = [];
+        this.commitIndex = 0; //index of highest log entry known to be commited
+        this.lastApplied = 0; //index of highest log entry applied to state machine
+        this.lastLogIndex = 0;
+        this.lastLogTerm = 0;
         this.newLogEntry = null;
         this.votesReceived = 0;
-        this.voteResquestReceived = false;
+        this.voteRequestReceived = false;
         this.electionTimer = null;
+        this.nextIndex = [] //for each server, index of the next log entry to send to that server (initialized to leader last log index + 1)
     }
 
     startElectionTimeout() {
@@ -22,7 +27,7 @@ class RaftNode {
         this.electionTimeout = Math.floor(Math.random() * (300 - 150) + 150);
         this.electionTimer = setTimeout(async () => {
             console.log(`Start election timeout function...`);
-            if (!this.voteResquestReceived) {
+            if (!this.voteRequestReceived) {
                 this.checkForLeader();
                 console.log(this.leaderIsAvailable);
                 if (this.leaderIsAvailable === false) {
@@ -57,9 +62,17 @@ class RaftNode {
 
     requestVote(nodeId) {
         console.log("the vote request is sending...");
+
+        if(this.log.length > 0){
+            this.lastLogIndex = this.log[this.log.length - 1].index;
+            this.lastLogTerm = this.log[this.log.length - 1].term;
+        }
         axios.post(`http://localhost:300${nodeId}/requestVote`, {
             candidateId: this.id,
-            term: this.currentTerm
+            candidateTerm: this.currentTerm,
+            candidateLastLogIndex: this.lastLogIndex ,
+            candidateLastLogTerm: this.lastLogTerm,
+            candidateLogLength: this.log.length,
         })
             .then(response => {
                 console.log(`Vote Request sent to Node${nodeId}`);
@@ -71,7 +84,6 @@ class RaftNode {
     }
 
     handleVoteResponse(response) {
-        console.log(response.data);
         if (response.data && response.data.term === this.currentTerm && response.data.voteGranted) {
             this.votesReceived++;
             console.log(`Node${this.id} received ${this.votesReceived} votes`);
@@ -82,7 +94,7 @@ class RaftNode {
     }
 
     resetVoteTimeout() {
-        this.voteResquestReceived = false;
+        this.voteRequestReceived = false;
         this.startElectionTimeout();
     }
 
@@ -114,7 +126,7 @@ class RaftNode {
                     }).then((response) => {
                         console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
                         console.log(response.data);
-                        
+
                     });
                 } catch (error) {
                     console.error(`Error sending heartbeat to ${node}:`, error.message);

@@ -10,10 +10,13 @@ app.get("/", (req, res) => {
     return res.status(200).send("true");
 })
 
+
+//check if the server is available
 app.get('/isAvailable', (req, res) => {
     res.status(200).send('Yes');
 });
 
+//trigger leader election
 app.post('/start-election', (req, res) => {
     raftNode.voteResquestReceived = false;
     raftNode.votedFor = null;
@@ -23,36 +26,37 @@ app.post('/start-election', (req, res) => {
     res.status(200).send(`Node ${raftNode.id} started a new leader election.`);
 });
 
+//handle a vote request send by a candidate
 app.post('/requestVote', (req, res) => {
-    const { candidateId, term } = req.body;
+    const { candidateId, candidateTerm, candidateLastLogIndex, candidateLastLogTerm, candidateLogLength } = req.body;
 
-    raftNode.voteResquestReceived = true;
+    raftNode.voteRequestReceived = true;
 
     console.log(`Vote request received from ${candidateId} at term ${raftNode.currentTerm} of Node${raftNode.id}`);
 
-    if (term < raftNode.currentTerm) {
+    const lastLog = raftNode.log[raftNode.log.length - 1];
+    const lastTerm = lastLog ? lastLog.term : 0;
+
+    const logOk = candidateLastLogTerm > lastTerm || (candidateLastLogTerm === lastTerm && candidateLogLength >= raftNode.log.length);
+
+    if (candidateTerm < raftNode.currentTerm || !logOk || raftNode.votedFor !== null && raftNode.votedFor !== candidateId) {
         res.json({ nodeId: raftNode.id, voteGranted: false, term: raftNode.currentTerm });
     } else {
-        if (raftNode.votedFor === null || raftNode.votedFor === candidateId) {
-            raftNode.currentTerm = term;
-            raftNode.votedFor = candidateId;
-            if (raftNode.votedFor !== raftNode.id) {
-                raftNode.state = 'follower';
-            }
-            res.json({ nodeId: raftNode.id, voteGranted: true, term: raftNode.currentTerm });
-        } else {
-            res.json({ nodeId: raftNode.id, voteGranted: false, term: raftNode.currentTerm });
-        }
+        raftNode.currentTerm = candidateTerm;
+        raftNode.votedFor = candidateId;
+        raftNode.state = raftNode.votedFor !== raftNode.id ? 'follower' : raftNode.state;
+        res.json({ nodeId: raftNode.id, voteGranted: true, term: raftNode.currentTerm });
     }
 });
 
+//handle heartbeat send by the leader
 app.post('/receive-heartbeat', (req, res) => {
     const { term, leaderId, newLogEntry } = req.body;
     try {
         console.log("Heartbeat received from Node" + leaderId + " at term " + term);
         console.log(`[Node${raftNode.id}] currentTerm = ${raftNode.currentTerm}`);
 
-        if(newLogEntry !== null){
+        if (newLogEntry !== null) {
             raftNode.log.push(newLogEntry);
             console.log(raftNode.log);
         }
@@ -68,7 +72,7 @@ app.post('/receive-heartbeat', (req, res) => {
     }
 });
 
-//append a new log after receiving a request from a client
+//add a new log entry after receiving a request from a client
 app.post('/append-log', (req, res) => {
     const data = req.body;
     raftNode.appendLogEntry(data);
