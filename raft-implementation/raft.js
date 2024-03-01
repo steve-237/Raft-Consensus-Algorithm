@@ -19,6 +19,7 @@ class RaftNode {
         this.votesReceived = 0;
         this.voteRequestReceived = false;
         this.electionTimer = null;
+        this.heartbeatTimer = null;
         this.nextIndex = [] //for each server, index of the next log entry to send to that server (initialized to leader last log index + 1)
     }
 
@@ -27,8 +28,9 @@ class RaftNode {
         this.electionTimeout = Math.floor(Math.random() * (300 - 150) + 150);
         this.electionTimer = setTimeout(async () => {
             console.log(`Start election timeout function...`);
+            this.stopHeartbeatTimer();
             if (!this.voteRequestReceived) {
-                this.checkForLeader();
+                //this.checkForLeader();
                 console.log(this.leaderIsAvailable);
                 if (this.leaderIsAvailable === false) {
                     this.startElection();
@@ -52,25 +54,35 @@ class RaftNode {
             });
     }
 
-    resetElectionTimeout() {
-        this.startElectionTimeout();
+    stopElectionTimer() {
+        clearTimeout(this.electionTimer);
     }
 
-    stopElectionTimeout() {
-        clearTimeout(this.electionTimer);
+    stopHeartbeatTimer() {
+        console.log("heartbeat Timer resets");
+        clearInterval(this.heartbeatTimer);
+    }
+
+    heartbeatInterval() {
+        this.heartbeatTimer = setInterval(() => {
+            console.log(`heartbeat Timeout achieved for node${this.id}`);
+            this.voteRequestReceived = false;
+            this.votedFor = null;
+            this.startElectionTimeout();
+        }, 1500);
     }
 
     requestVote(nodeId) {
         console.log("the vote request is sending...");
 
-        if(this.log.length > 0){
+        if (this.log.length > 0) {
             this.lastLogIndex = this.log[this.log.length - 1].index;
             this.lastLogTerm = this.log[this.log.length - 1].term;
         }
         axios.post(`http://localhost:300${nodeId}/requestVote`, {
             candidateId: this.id,
             candidateTerm: this.currentTerm,
-            candidateLastLogIndex: this.lastLogIndex ,
+            candidateLastLogIndex: this.lastLogIndex,
             candidateLastLogTerm: this.lastLogTerm,
             candidateLogLength: this.log.length,
         })
@@ -84,6 +96,7 @@ class RaftNode {
     }
 
     handleVoteResponse(response) {
+        console.log(response.data);
         if (response.data && response.data.term === this.currentTerm && response.data.voteGranted) {
             this.votesReceived++;
             console.log(`Node${this.id} received ${this.votesReceived} votes`);
@@ -93,16 +106,11 @@ class RaftNode {
         }
     }
 
-    resetVoteTimeout() {
-        this.voteRequestReceived = false;
-        this.startElectionTimeout();
-    }
-
     async becomeLeader() {
         this.state = 'leader';
-        clearTimeout(this.electionTimeout);
+        this.stopElectionTimer();
         console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
-        try {
+        /* try {
             await axios.post(`http://localhost:3004/send-leader-id`, {
                 leaderId: this.id
             }).then((response) => {
@@ -111,7 +119,7 @@ class RaftNode {
             });
         } catch (error) {
             console.error(`Node leader registration faild:`, error.message);
-        }
+        } */
         await this.sendHeartbeats();
     }
 
@@ -126,7 +134,6 @@ class RaftNode {
                     }).then((response) => {
                         console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
                         console.log(response.data);
-
                     });
                 } catch (error) {
                     console.error(`Error sending heartbeat to ${node}:`, error.message);
@@ -134,17 +141,6 @@ class RaftNode {
             }
             this.newLogEntry = null;
             await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-    }
-
-    async checkForLeader() {
-        try {
-            const response = await axios.get('http://localhost:3004/leaderId');
-            this.leaderIsAvailable = response.data;
-            console.log('There is already a leader');
-        } catch (error) {
-            console.log('There is no leader yet');
-            console.error('Error checking for leader:', error.message);
         }
     }
 
@@ -181,7 +177,7 @@ class RaftNode {
 
     async checkPortListening(port) {
         try {
-            const response = await axios.get(`http://localhost:300${port}`);
+            const response = await axios.get(`http://localhost:300${port}/isAvailable`);
             console.log(response.data);
             return response.data;
         } catch (error) {

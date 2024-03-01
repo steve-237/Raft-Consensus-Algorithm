@@ -4,7 +4,8 @@
   "description": "",
   "main": "proxy.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +17,8 @@
     "express-form-data": "^2.0.23",
     "http-proxy": "^1.18.1",
     "http-proxy-middleware": "^2.0.6",
-    "multer": "^1.4.5-lts.1"
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "nodemon": "^3.1.0"
   }
 }
