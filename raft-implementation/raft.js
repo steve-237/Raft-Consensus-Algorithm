@@ -29,12 +29,15 @@ class RaftNode {
         this.electionTimer = setTimeout(async () => {
             console.log(`Start election timeout function...`);
             this.stopHeartbeatTimer();
+            console.log(this.voteRequestReceived);
             if (!this.voteRequestReceived) {
                 //this.checkForLeader();
                 console.log(this.leaderIsAvailable);
                 if (this.leaderIsAvailable === false) {
                     this.startElection();
                 }
+            } else {
+                return;
             }
         }, this.electionTimeout);
     }
@@ -68,8 +71,10 @@ class RaftNode {
             console.log(`heartbeat Timeout achieved for node${this.id}`);
             this.voteRequestReceived = false;
             this.votedFor = null;
+            this.state = 'follower';
+            this.leaderId = null;
             this.startElectionTimeout();
-        }, 1500);
+        }, 2500);
     }
 
     requestVote(nodeId) {
@@ -97,17 +102,26 @@ class RaftNode {
 
     handleVoteResponse(response) {
         console.log(response.data);
-        if (response.data && response.data.term === this.currentTerm && response.data.voteGranted) {
+        if (this.state === 'candidate' && response.data && response.data.term === this.currentTerm && response.data.voteGranted) {
             this.votesReceived++;
             console.log(`Node${this.id} received ${this.votesReceived} votes`);
             if (this.votesReceived > this.nodes.length / 2) {
                 this.becomeLeader();
             }
+        } else if (this.leaderId === null) {
+            setTimeout(() => {
+                this.voteRequestReceived = false;
+                this.votedFor = null;
+                this.state = 'follower';
+                this.leaderId = null;
+                this.startElectionTimeout();
+            }, 1000);
         }
     }
 
     async becomeLeader() {
         this.state = 'leader';
+        this.leaderId = this.id;
         this.stopElectionTimer();
         console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
         /* try {
@@ -140,7 +154,7 @@ class RaftNode {
                 }
             }
             this.newLogEntry = null;
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
     }
 
