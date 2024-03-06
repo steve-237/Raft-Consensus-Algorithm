@@ -124,37 +124,38 @@ class RaftNode {
         this.leaderId = this.id;
         this.stopElectionTimer();
         console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
-        /* try {
-            await axios.post(`http://localhost:3004/send-leader-id`, {
-                leaderId: this.id
-            }).then((response) => {
-                console.log("Leader register to the cluster Manager");
-                console.log(response.data);
-            });
-        } catch (error) {
-            console.error(`Node leader registration faild:`, error.message);
-        } */
         await this.sendHeartbeats();
     }
 
     async sendHeartbeats() {
         while (this.state === 'leader') {
+            if (this.log.length > 0) {
+                this.lastLogIndex = this.log[this.log.length - 1].index;
+                this.lastLogTerm = this.log[this.log.length - 1].term;
+            }
+
             for (const node of this.nodes) {
                 try {
                     await axios.post(`http://localhost:300${node}/receive-heartbeat`, {
                         term: this.currentTerm,
                         leaderId: this.id,
-                        newLogEntry: this.newLogEntry
+                        newLogEntry: this.newLogEntry,
+                        lastLogIndex: this.lastLogIndex,
+                        lastLogTerm: this.lastLogTerm,
+                        leaderCommitIndex: this.commitIndex
                     }).then((response) => {
                         console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
                         console.log(response.data);
+                        if (response.data.success === true) {
+                            console.log("New log appended successfuly");
+                        }
                     });
                 } catch (error) {
                     console.error(`Error sending heartbeat to ${node}:`, error.message);
                 }
             }
             this.newLogEntry = null;
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 450));
         }
     }
 
