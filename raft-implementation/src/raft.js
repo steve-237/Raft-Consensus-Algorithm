@@ -1,18 +1,27 @@
 const axios = require('axios');
 const LogEntry = require('./logEntry');
+const raftRoles = require('./raftRoles');
+const Log = require('./log');
 
 class RaftNode {
     constructor(id) {
         this.id = id;
-        this.state = 'follower';
+        this.state = raftRoles.FOLLOWER;
+
+        //peristent
         this.currentTerm = 0;
         this.votedFor = null;
+        this.log = new Log();
+
         this.leaderId = null;
         this.leaderIsAvailable = false;
         this.nodes = [];
-        this.log = [];
+
+        //volatile
         this.commitIndex = 0; //index of highest log entry known to be commited
         this.lastApplied = 0; //index of highest log entry applied to state machine
+
+
         this.lastLogIndex = 0;
         this.lastLogTerm = 0;
         this.newLogEntry = null;
@@ -25,13 +34,12 @@ class RaftNode {
 
     startElectionTimeout() {
         clearTimeout(this.electionTimer);
-        this.electionTimeout = Math.floor(Math.random() * (300 - 150) + 150);
+        this.electionTimeout = Math.floor(Math.random() * (3000 - 1500) + 1500);
         this.electionTimer = setTimeout(async () => {
             console.log(`Start election timeout function...`);
             this.stopHeartbeatTimer();
             console.log(this.voteRequestReceived);
             if (!this.voteRequestReceived) {
-                //this.checkForLeader();
                 console.log(this.leaderIsAvailable);
                 if (this.leaderIsAvailable === false) {
                     this.startElection();
@@ -45,8 +53,8 @@ class RaftNode {
     startElection() {
         console.log(`Election timeout : ${this.electionTimeout} ms.`);
         console.log(`Election timer : ${this.electionTimer} ms.`);
-        if (this.state !== 'follower') return;
-        this.state = 'candidate';
+        if (this.state !== raftRoles.FOLLOWER) return;
+        this.state = raftRoles.CANDIDATE;
         this.currentTerm++;
         this.votedFor = this.id;
         this.votesReceived = 1;
@@ -71,25 +79,21 @@ class RaftNode {
             console.log(`heartbeat Timeout achieved for node${this.id}`);
             this.voteRequestReceived = false;
             this.votedFor = null;
-            this.state = 'follower';
+            this.state = raftRoles.FOLLOWER;
             this.leaderId = null;
             this.startElectionTimeout();
-        }, 2500);
+        }, 10000);
     }
 
     requestVote(nodeId) {
         console.log("the vote request is sending...");
 
-        if (this.log.length > 0) {
-            this.lastLogIndex = this.log[this.log.length - 1].index;
-            this.lastLogTerm = this.log[this.log.length - 1].term;
-        }
         axios.post(`http://localhost:300${nodeId}/requestVote`, {
             candidateId: this.id,
             candidateTerm: this.currentTerm,
-            candidateLastLogIndex: this.lastLogIndex,
-            candidateLastLogTerm: this.lastLogTerm,
-            candidateLogLength: this.log.length,
+            candidateLastLogIndex: this.log.getLastIndex(),
+            candidateLastLogTerm: this.log.getLastIndex(),
+            candidateLogLength: this.log.getLogLength(),
         })
             .then(response => {
                 console.log(`Vote Request sent to Node${nodeId}`);
@@ -102,7 +106,7 @@ class RaftNode {
 
     handleVoteResponse(response) {
         console.log(response.data);
-        if (this.state === 'candidate' && response.data && response.data.term === this.currentTerm && response.data.voteGranted) {
+        if (this.state === raftRoles.CANDIDATE && response.data && response.data.term === this.currentTerm && response.data.voteGranted) {
             this.votesReceived++;
             console.log(`Node${this.id} received ${this.votesReceived} votes`);
             if (this.votesReceived > this.nodes.length / 2) {
@@ -112,7 +116,7 @@ class RaftNode {
             setTimeout(() => {
                 this.voteRequestReceived = false;
                 this.votedFor = null;
-                this.state = 'follower';
+                this.state = raftRoles.FOLLOWER;
                 this.leaderId = null;
                 this.startElectionTimeout();
             }, 1000);
@@ -120,7 +124,7 @@ class RaftNode {
     }
 
     async becomeLeader() {
-        this.state = 'leader';
+        this.state = raftRoles.LEADER;
         this.leaderId = this.id;
         this.stopElectionTimer();
         console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
@@ -128,11 +132,7 @@ class RaftNode {
     }
 
     async sendHeartbeats() {
-        while (this.state === 'leader') {
-            if (this.log.length > 0) {
-                this.lastLogIndex = this.log[this.log.length - 1].index;
-                this.lastLogTerm = this.log[this.log.length - 1].term;
-            }
+        while (this.state === raftRoles.LEADER) {
 
             for (const node of this.nodes) {
                 try {
@@ -140,8 +140,8 @@ class RaftNode {
                         term: this.currentTerm,
                         leaderId: this.id,
                         newLogEntry: this.newLogEntry,
-                        lastLogIndex: this.lastLogIndex,
-                        lastLogTerm: this.lastLogTerm,
+                        lastLogIndex: this.log.getLastIndex(),
+                        lastLogTerm: this.log.getLastTerm(),
                         leaderCommitIndex: this.commitIndex
                     }).then((response) => {
                         console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
@@ -155,16 +155,15 @@ class RaftNode {
                 }
             }
             this.newLogEntry = null;
-            await new Promise(resolve => setTimeout(resolve, 450));
+            await new Promise(resolve => setTimeout(resolve, 5000));
         }
     }
 
     appendLogEntry(request) {
-        if (this.state === 'leader') {
-            const index = this.log.length + 1;
+        if (this.state === raftRoles.LEADER) {
+            const index = this.log.getLogLength() + 1;
             this.newLogEntry = new LogEntry(index, this.currentTerm, request);
-            this.log.push(this.newLogEntry);
-            console.log(this.log);
+            this.log.addEntry(this.newLogEntry);
         }
     }
 

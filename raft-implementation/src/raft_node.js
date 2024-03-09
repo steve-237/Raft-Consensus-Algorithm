@@ -7,7 +7,7 @@ const RaftNode = require('./raft'),
     NODE_ID = parseInt(process.argv[2]),
     raftNode = new RaftNode(NODE_ID);
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 app.get('/isAvailable', (req, res) => {
     res.status(200).send('Yes');
@@ -16,15 +16,16 @@ app.get('/isAvailable', (req, res) => {
 //handle a vote request send by a candidate
 app.post('/requestVote', (req, res) => {
     const { candidateId, candidateTerm, candidateLastLogIndex, candidateLastLogTerm, candidateLogLength } = req.body;
+    console.log(`received from candidate ${candidateId}, ${candidateTerm}, ${candidateLastLogIndex}, ${candidateLastLogTerm}, ${candidateLogLength}`)
 
     raftNode.voteRequestReceived = true;
 
     console.log(`Vote request received from ${candidateId} at term ${raftNode.currentTerm} of Node${raftNode.id}`);
 
-    const lastLog = raftNode.log[raftNode.log.length - 1];
+    const lastLog = raftNode.log.getLastEntry();
     const lastTerm = lastLog ? lastLog.term : 0;
 
-    const logOk = candidateLastLogTerm > lastTerm || (candidateLastLogTerm === lastTerm && candidateLogLength >= raftNode.log.length);
+    const logOk = candidateLastLogTerm > lastTerm || (candidateLastLogTerm === lastTerm && candidateLogLength >= raftNode.log.getLogLength());
 
     if (candidateTerm < raftNode.currentTerm || !logOk || raftNode.votedFor !== null && raftNode.votedFor !== candidateId) {
         res.json({ nodeId: raftNode.id, voteGranted: false, term: raftNode.currentTerm });
@@ -53,7 +54,7 @@ app.post('/receive-heartbeat', (req, res) => {
 
 
     if (newLogEntry !== null) {
-        if (lastLogIndex < raftNode.log.length && raftNode.log[lastLogIndex].term === lastLogTerm) {
+        /* if (lastLogIndex < raftNode.log.length && raftNode.log[lastLogIndex].term === lastLogTerm) {
             if (raftNode.log[lastLogIndex].term !== newLogEntry.term) {
                 raftNode.log.splice(lastLogIndex);
             }
@@ -73,9 +74,8 @@ app.post('/receive-heartbeat', (req, res) => {
                 res.status(200).send({ Node: raftNode.id, term: raftNode.currentTerm, success: false });
                 return;
             }
-        }
-        raftNode.log.push(newLogEntry);
-        console.log(raftNode.log);
+        } */
+        raftNode.log.addEntry(newLogEntry);
         res.status(200).send({ Node: raftNode.id, term: raftNode.currentTerm, success: true });
         return;
     }
@@ -93,7 +93,7 @@ app.all('*', async function (req, res, next) {
         let request = req;
         if (req.method === 'POST') {
 
-            if (raftNode.state !== 'leader') {
+            if (raftNode.state !== 'LEADER') {
                 const redirectUrl = `http://localhost:300${raftNode.leaderId}${req.originalUrl}`;
                 console.log(`Redirection of the request to the leader: ${redirectUrl}`);
                 proxy.web(req, res, { target: `${req.protocol}://${req.hostname}:300${raftNode.leaderId}` });
