@@ -3,6 +3,7 @@ const RaftNode = require('./raft'),
     app = express(),
     httpProxy = require('http-proxy'),
     proxy = httpProxy.createProxyServer({}),
+    raftStates = require('./raftStates'),
     axios = require('axios'),
     NODE_ID = parseInt(process.argv[2]),
     raftNode = new RaftNode(NODE_ID);
@@ -10,10 +11,12 @@ const RaftNode = require('./raft'),
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/isAvailable', (req, res) => {
-    res.status(200).send('Yes');
+    res.status(200).send(true);
 });
 
-//handle a vote request send by a candidate
+/**
+ * Handle a vote request send by a candidate.
+ */
 app.post('/requestVote', (req, res) => {
     const { candidateId, candidateTerm, candidateLastLogIndex, candidateLastLogTerm, candidateLogLength } = req.body;
     console.log(`received from candidate ${candidateId}, ${candidateTerm}, ${candidateLastLogIndex}, ${candidateLastLogTerm}, ${candidateLogLength}`)
@@ -32,7 +35,7 @@ app.post('/requestVote', (req, res) => {
     } else {
         raftNode.currentTerm = candidateTerm;
         raftNode.votedFor = candidateId;
-        raftNode.state = raftNode.votedFor !== raftNode.id ? 'follower' : raftNode.state;
+        raftNode.setState(raftStates.FOLLOWER);
         res.json({ nodeId: raftNode.id, voteGranted: true, term: raftNode.currentTerm });
     }
 });
@@ -49,13 +52,13 @@ app.post('/receive-heartbeat', (req, res) => {
     if (term > raftNode.currentTerm) {
         raftNode.currentTerm = term;
         raftNode.votedFor = null;
-        raftNode.state = 'follower';
+        raftNode.setState(raftStates.FOLLOWER);
     }
 
 
     if (newLogEntry !== null) {
-        /* if (lastLogIndex < raftNode.log.length && raftNode.log[lastLogIndex].term === lastLogTerm) {
-            if (raftNode.log[lastLogIndex].term !== newLogEntry.term) {
+        /* if (lastLogIndex < raftNode.log.getLogLength() && raftNode.log.getLastEntry().term === lastLogTerm) {
+            if (raftNode.log.getLastEntry().term !== newLogEntry.term) {
                 raftNode.log.splice(lastLogIndex);
             }
         }
@@ -133,5 +136,5 @@ app.all('*', async function (req, res, next) {
 
 app.listen(3000 + NODE_ID, () => {
     console.log(`Node running on port ${3000 + NODE_ID}`);
-    raftNode.checkAllPortsOnAllNodes();
+    raftNode.init();
 });
