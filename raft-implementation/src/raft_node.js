@@ -8,7 +8,7 @@ const RaftNode = require('./raft'),
     NODE_ID = parseInt(process.argv[2]),
     raftNode = new RaftNode(NODE_ID);
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '10mb' })); //increase the size of the parsed payload in the body of a request
 
 app.get('/isAvailable', (req, res) => {
     res.status(200).send(true);
