@@ -25,8 +25,6 @@ class RaftNode {
         this.nodes = [];
 
         this.votedFor = null;
-
-        this.newLogEntry = null;
         this.votesReceived = 0;
 
         this.timer = null;
@@ -95,10 +93,13 @@ class RaftNode {
             this.votesReceived++;
             console.log(`Node${this.id} received ${this.votesReceived} votes`);
             if (this.votesReceived > this.nodes.length / 2) {
-                this.timeout = 1000;
-                this.state = raftStates.LEADER;
+                this.setState(raftStates.LEADER);
                 this.leaderId = this.id;
-                this.resetTimerNow()
+                this.nextIndex = Array(3).fill(this.log.getLastIndex() + 1);
+                this.matchIndex = Array(3).fill(0);
+                console.log("Contenu de this.nextIndex :", this.nextIndex);
+                console.log("Contenu de this.matchIndex :", this.matchIndex);
+                this.resetTimerNow();
                 console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
             }
         }
@@ -118,7 +119,7 @@ class RaftNode {
             this.runRaft()
         }, this.timeout);
     }
- 
+
     /**
      * Immediately resets the timer used to manage waiting times
      */
@@ -139,7 +140,7 @@ class RaftNode {
      * @returns - The timeout to keep the leader alive if the Node is a leader or the timeout to start a new election if the Node is a follower
      */
     getTimeout() {
-        return this.state === raftStates.LEADER ? 1000 : Math.floor(Math.random() * (6000 - 3000) + 3000);
+        return this.state === raftStates.LEADER ? 5000 : Math.floor(Math.random() * (12000 - 6000) + 6000);
     }
 
     /**
@@ -156,21 +157,22 @@ class RaftNode {
     async sendHeartbeats() {
         for (const node of this.nodes) {
             try {
-                await axios.post(`http://localhost:300${node}/receive-heartbeat`, {
+                await axios.post(`http://localhost:300${node}/append-entries`, {
                     term: this.currentTerm,
                     leaderId: this.id,
                     newLogEntry: this.newLogEntry,
                     lastLogIndex: this.log.getLastIndex(),
                     lastLogTerm: this.log.getLastTerm(),
                     leaderCommitIndex: this.commitIndex
-                }).then((response) => {
+                }).then(async (response) => {
                     console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
                     console.log(response.data);
                     if (response.data.term > this.currentTerm) {
                         this.currentTerm = response.data.term;
                         this.setState(raftStates.FOLLOWER);
-                    } else if (response.data.result) {
-                        console.log('log appended successfully!');
+                        return;
+                    } else if (!response.data.success) {
+                        await this.replicateLog(node);
                     }
                 });
             } catch (error) {
@@ -180,14 +182,66 @@ class RaftNode {
     }
 
     /**
+     * replicate log on a specific Node.
+     * @param {number} node - Node Id
+     * @returns 
+     */
+    async replicateLog(node) {
+        const lastLogIndex = this.log.getLastIndex();
+        console.log("Last log Index : " + lastLogIndex);
+        console.log("Next Index : " + this.nextIndex[node]);
+
+        try {
+            while (lastLogIndex >= this.nextIndex[node]) {
+                const next = this.nextIndex[node];
+                let result;
+
+                try {
+                    const prevEntry = this.log.getEntry(next - 1);
+                    console.log("Previous Entry Index: " + prevEntry.index);
+                    const prevLogIndex = prevEntry !== undefined ? prevEntry.index : 0;
+                    const prevLogTerm = prevEntry !== undefined ? prevEntry.term : 0;
+
+                    const response = await axios.post(`http://localhost:300${node}/append-entries`, {
+                        term: this.currentTerm,
+                        leaderId: this.id,
+                        prevLogIndex: prevLogIndex,
+                        prevLogTerm: prevLogTerm,
+                        entries: this.log.getEntriesFrom(next),
+                        leaderCommit: this.commitIndex
+                    });
+
+                    result = response.data;
+
+                    if (result.term > this.currentTerm) {
+                        this.currentTerm = result.term;
+                        this.setState(raftStates.FOLLOWER);
+                        return;
+                    }
+                } catch (error) {
+                    console.error(`Append Entries failed for Node${node} : ${error.message}`);
+                    break;
+                }
+
+                if (result.success) {
+                    this.matchIndex[node] = lastLogIndex;
+                    this.nextIndex[node] = this.matchIndex[node] + 1;
+                }
+                break;
+            }
+        } catch (error) {
+            console.error(`Error occurred during replication for Node${node}: ${error.message}`);
+        }
+    }
+
+    /**
      * Appends a new log entry to the log if the current node is the leader.
      * @param {object} request - The POST request to add in the log.
      */
-    appendLogEntry(request) {
+    receiveNewEntry(request) {
         if (this.state === raftStates.LEADER) {
-            const index = this.log.getLogLength() + 1;
-            this.newLogEntry = new LogEntry(index, this.currentTerm, request);
-            this.log.addEntry(this.newLogEntry);
+            this.log.addEntry(new LogEntry(this.log.getLastIndex() + 1, this.currentTerm, request));
+            this.resetTimerNow();
         }
     }
 
@@ -195,9 +249,25 @@ class RaftNode {
      * Initiates the process of replicating logs by sending heartbeats to all nodes in the cluster.
      */
     async replicateLogs() {
+        this.matchIndex[this.id] = this.log.getLastIndex();
 
-        this.sendHeartbeats();
+        for (let node of this.nodes) {
+            await this.replicateLog(node);
+        }
 
+        while (true) {
+            let N = this.commitIndex + 1;
+            let matchCount = this.matchIndex.reduce((count, mi) => mi >= N ? count + 1 : count, 0);
+
+            if (matchCount >= this.nodes.length / 2 + 1 && this.log.getEntry(N).term === this.currentTerm) {
+                this.commitIndex++;
+                this.lastApplied++;
+            } else {
+                break;
+            }
+
+            this.sendHeartbeats();
+        }
     }
 
     /**
@@ -259,6 +329,8 @@ class RaftNode {
      */
     runRaft() {
         if (this.state === raftStates.LEADER) {
+            console.log("Commit index : " + this.commitIndex)
+            console.log("Last index : " + this.log.getLastIndex())
             if (this.commitIndex < this.log.getLastIndex()) {
                 this.replicateLogs();
             } else {

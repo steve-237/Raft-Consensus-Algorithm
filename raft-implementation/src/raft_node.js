@@ -33,7 +33,11 @@ app.post('/requestVote', (req, res) => {
     //const logOk = candidateLastLogTerm > lastTerm || (candidateLastLogTerm === lastTerm && candidateLogLength >= raftNode.log.getLogLength());
 
     if (candidateTerm < raftNode.currentTerm || raftNode.votedFor !== null && raftNode.votedFor !== candidateId) {
-        resstatus(200).json({ nodeId: raftNode.id, voteGranted: false, term: raftNode.currentTerm });
+        if (candidateTerm > raftNode.currentTerm) {
+            raftNode.currentTerm = candidateTerm;
+            raftNode.setState(raftStates.FOLLOWER);
+        }
+        res.status(200).json({ nodeId: raftNode.id, voteGranted: false, term: raftNode.currentTerm });
     } else {
         raftNode.currentTerm = candidateTerm;
         raftNode.votedFor = candidateId;
@@ -45,7 +49,7 @@ app.post('/requestVote', (req, res) => {
 /**
  * Handles the reception of a heartbeat from the leader.
  */
-app.post('/receive-heartbeat', (req, res) => {
+/*app.post('/receive-heartbeat', (req, res) => {
     const { term, leaderId, newLogEntry, lastLogIndex, lastLogTerm, leaderCommitIndex } = req.body;
     raftNode.stopTimer();
     raftNode.leaderId = leaderId;
@@ -82,13 +86,56 @@ app.post('/receive-heartbeat', (req, res) => {
                 res.status(200).send({ Node: raftNode.id, term: raftNode.currentTerm, success: false });
                 return;
             }
-        } */
+        } 
         raftNode.log.addEntry(newLogEntry);
         res.status(200).send({ Node: raftNode.id, term: raftNode.currentTerm, success: true });
         return;
     }
     raftNode.resetTimer();
     res.status(200).send('Heartbeat received!');
+});
+*/
+
+app.post('/append-entries', async (req, res) => {
+    const { term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit } = req.body;
+
+    //raftNode.stopTimer();
+    raftNode.leaderId = leaderId;
+    raftNode.setState(raftStates.FOLLOWER);
+    raftNode.votedFor = null;
+
+    const prevLogEntry = raftNode.log.getEntry(prevLogIndex);
+    console.log("previous log for Follower node : " + prevLogEntry );
+    if (term < raftNode.currentTerm || (entries && (!prevLogEntry || prevLogEntry.term !== prevLogTerm))) {
+        console.log(`Append from ${leaderId} rejected`);
+        res.status(200).json({ Node: raftNode.id, term: raftNode.currentTerm, success: false });
+        return;
+    }
+
+    if (!entries)
+        console.log(`Heartbeat from ${leaderId} received`);
+    else
+        console.log(`Append from ${leaderId} received`);
+
+    raftNode.currentTerm = term;
+
+    if (entries) {
+        raftNode.log.storeEntries(entries);
+    }
+
+    if (leaderCommit > raftNode.commitIndex) {
+        console.log(`leaderCommit: ${leaderCommit}; commitIndex: ${raftNode.commitIndex} lastApplied: ${raftNode.lastApplied}`);
+
+        raftNode.commitIndex = Math.min(leaderCommit, raftNode.log.getLastIndex());
+
+        // Apply entries to the state Machine here
+        while (raftNode.lastApplied < raftNode.commitIndex) {
+            raftNode.lastApplied++;
+            console.log(`Apply: ${raftNode.lastApplied}`);
+        }
+    }
+    res.status(200).json({ Node: raftNode.id, term: raftNode.currentTerm, success: true });
+    raftNode.resetTimer();
 });
 
 /**
@@ -101,7 +148,7 @@ app.all('*', async function (req, res, next) {
     console.log(userAgent);
 
     //Handles client request
-    if (!userAgent.includes(axios)) {
+    if (!userAgent.includes('axios')) {
         console.log('Request', req.protocol, req.method, req.url);
         let request = req;
         if (req.method === 'POST') {
@@ -130,7 +177,7 @@ app.all('*', async function (req, res, next) {
                     console.log('Data to be processed with Raft:', request);
 
                     try {
-                        raftNode.appendLogEntry(request);
+                        raftNode.receiveNewEntry(request);
                     } catch (error) {
                         console.error('Error appending the Log Entry:', error.message);
                         res.status(500).send('Error appending the Log Entry');

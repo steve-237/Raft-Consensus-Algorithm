@@ -1,18 +1,26 @@
 const LogEntry = require('./logEntry');
 
+/**
+ * Handle log.
+ */
 class Log {
     constructor() {
         this.firstIndex = 0;
         this.log = [];
+        this.initLog(0, 0);
     }
 
+    /**
+     * Appends a new Entry in the log.
+     * @param {objet} entry - New entry
+     */
     addEntry(entry){
         this.log.push(entry);
         console.log(this.log);
     }
 
     getEntry(index){
-        let offset = index - this.startIndex;
+        let offset = index - this.firstIndex;
         if(offset >= this.log.length || offset < 0){
             return null;
         }
@@ -43,6 +51,11 @@ class Log {
         return this.log.length;
     }
 
+    /**
+     * Gets list of entries from an index.
+     * @param {number} startIndex - Index from where the entries must be fetch.
+     * @returns - List of entries.
+     */
     getEntriesFrom(startIndex){
         let lastIndex = this.getLastIndex();
         let entries = new Array(lastIndex - startIndex +1);
@@ -52,6 +65,10 @@ class Log {
         return entries;
     }
 
+    /**
+     * Saves new logs entries
+     * @param {object} entries - New log entries to store.
+     */
     storeEntries(entries) {
         for(const entry of entries) {
             const offset = entry.index - this.firstIndex;
@@ -69,8 +86,19 @@ class Log {
                     this.log.pop();
                 }
             }
-            this.log.addEntry(entry);
+            this.addEntry(entry);
         }
+    }
+
+    /**
+     * Initialises the log of each each Node.
+     * @param {number} index - initiale index
+     * @param {number} term - initiale term
+     */
+    initLog(index, term){
+        if (this.log.length === 0) {
+            this.log = [new LogEntry(index, term, null)];
+        } 
     }
 }
 
