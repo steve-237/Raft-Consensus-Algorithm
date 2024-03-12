@@ -53,7 +53,7 @@ class RaftNode {
         console.log(`The node ${this.id} on state ${this.state} is starting the election`);
         Promise.all(this.nodes.map(nodeId => this.requestVote(nodeId)))
             .then(() => {
-                console.log("All vote requests sent.");
+                console.log("All vote requests habe been sent.");
             });
     }
 

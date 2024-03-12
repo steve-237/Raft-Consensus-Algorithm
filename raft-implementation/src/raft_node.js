@@ -10,12 +10,15 @@ const RaftNode = require('./raft'),
 
 app.use(express.json({ limit: '10mb' })); //increase the size of the parsed payload in the body of a request
 
+/**
+ * This route checks the availability of a Node
+ */
 app.get('/isAvailable', (req, res) => {
     res.status(200).send(true);
 });
 
 /**
- * Handle a vote request send by a candidate.
+ * Handles a vote request send by a candidate.
  */
 app.post('/requestVote', (req, res) => {
     const { candidateId, candidateTerm, candidateLastLogIndex, candidateLastLogTerm, candidateLogLength } = req.body;
@@ -39,6 +42,9 @@ app.post('/requestVote', (req, res) => {
     }
 });
 
+/**
+ * Handles the reception of a heartbeat from the leader.
+ */
 app.post('/receive-heartbeat', (req, res) => {
     const { term, leaderId, newLogEntry, lastLogIndex, lastLogTerm, leaderCommitIndex } = req.body;
     raftNode.stopTimer();
@@ -85,11 +91,16 @@ app.post('/receive-heartbeat', (req, res) => {
     res.status(200).send('Heartbeat received!');
 });
 
+/**
+ * Middleware to intercepts all requests.
+ */
 app.all('*', async function (req, res, next) {
 
     const userAgent = req.headers['user-agent'];
 
     console.log(userAgent);
+
+    //Handles client request
     if (!userAgent.includes(axios)) {
         console.log('Request', req.protocol, req.method, req.url);
         let request = req;
