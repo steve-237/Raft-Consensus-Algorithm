@@ -1,7 +1,7 @@
 const axios = require('axios'),
-      LogEntry = require('./logEntry'),
-      raftStates = require('./raftStates'),
-      Log = require('./log');
+    LogEntry = require('./logEntry'),
+    raftStates = require('./raftStates'),
+    Log = require('./log');
 
 class RaftNode {
     constructor(id) {
@@ -10,7 +10,6 @@ class RaftNode {
 
         //peristent on all servers
         this.currentTerm = 0;
-        this.votedFor = null;
         this.log = new Log();
 
         //volatile on all servers
@@ -25,43 +24,32 @@ class RaftNode {
         this.leaderIsAvailable = false;
         this.nodes = [];
 
+        this.votedFor = null;
+
         this.newLogEntry = null;
         this.votesReceived = 0;
-        this.voteRequestReceived = false;
-        this.electionTimer = null;
-        this.heartbeatTimer = null;
+
+        this.timer = null;
+        this.timeout = null;
     }
 
-    startElectionTimeout() {
-        clearTimeout(this.electionTimer);
-        this.electionTimeout = Math.floor(Math.random() * (3000 - 1500) + 1500);
-        this.electionTimer = setTimeout(async () => {
-            console.log(`Start election timeout function...`);
-            this.stopHeartbeatTimer();
-            console.log(this.voteRequestReceived);
-            if (!this.voteRequestReceived) {
-                console.log(this.leaderIsAvailable);
-                if (this.leaderIsAvailable === false) {
-                    this.startElection();
-                }
-            } else {
-                return;
-            }
-        }, this.electionTimeout);
-    }
-
+    /**
+     * Sets the state of the Raft node to the provided state.
+     * @param {string} state - The new state of the Raft node.
+     */
     setState(state) {
         this.state = state;
     }
 
+    /**
+     * Initiates the election process.
+     */
     startElection() {
-        console.log(`Election timeout : ${this.electionTimeout} ms.`);
-        console.log(`Election timer : ${this.electionTimer} ms.`);
-        if (this.state !== raftStates.FOLLOWER) return;
+        this.votesReceived = 0;
         this.setState(raftStates.CANDIDATE);
         this.currentTerm++;
         this.votedFor = this.id;
-        this.votesReceived = 1;
+        this.votesReceived++;
         console.log(`The node ${this.id} on state ${this.state} is starting the election`);
         Promise.all(this.nodes.map(nodeId => this.requestVote(nodeId)))
             .then(() => {
@@ -70,36 +58,7 @@ class RaftNode {
     }
 
     /**
-     * 
-     */
-    stopElectionTimer() {
-        clearTimeout(this.electionTimer);
-    }
-
-    /**
-     * 
-     */
-    stopHeartbeatTimer() {
-        console.log("heartbeat Timer resets");
-        clearInterval(this.heartbeatTimer);
-    }
-
-    /**
-     * 
-     */
-    heartbeatInterval() {
-        this.heartbeatTimer = setInterval(() => {
-            console.log(`heartbeat Timeout achieved for node${this.id}`);
-            this.voteRequestReceived = false;
-            this.votedFor = null;
-            this.state = raftStates.FOLLOWER;
-            this.leaderId = null;
-            this.startElectionTimeout();
-        }, 10000);
-    }
-
-    /**
-     * Send vote request to specific node.
+     * Sends vote request to specific node.
      * @param {number} nodeId - Identifier of the node to which the vote request should be send.
      */
     requestVote(nodeId) {
@@ -122,73 +81,107 @@ class RaftNode {
     }
 
     /**
-     * 
-     * @param {*} response 
+     * Processes the response to a request for a vote.
+     * @param {object} response - Vote response of a node.
      */
     handleVoteResponse(response) {
         console.log(response.data);
+        if (response.data.term > this.currentTerm) {
+            this.currentTerm = response.data.term;
+            this.setState(raftStates.FOLLOWER);
+            return;
+        }
         if (this.state === raftStates.CANDIDATE && response.data && response.data.term === this.currentTerm && response.data.voteGranted) {
             this.votesReceived++;
             console.log(`Node${this.id} received ${this.votesReceived} votes`);
             if (this.votesReceived > this.nodes.length / 2) {
-                this.becomeLeader();
+                this.timeout = 1000;
+                this.state = raftStates.LEADER;
+                this.leaderId = this.id;
+                this.resetTimerNow()
+                console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
             }
-        } else if (this.leaderId === null) {
-            setTimeout(() => {
-                this.voteRequestReceived = false;
-                this.votedFor = null;
-                this.state = raftStates.FOLLOWER;
-                this.leaderId = null;
-                this.startElectionTimeout();
-            }, 1000);
         }
     }
 
     /**
-     * 
+     * Resets the timer used to manage timeouts in the Raft protocol.
      */
-    async becomeLeader() {
-        this.state = raftStates.LEADER;
-        this.leaderId = this.id;
-        this.stopElectionTimer();
-        console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
-        await this.sendHeartbeats();
+    resetTimer() {
+        if (this.timer !== null) {
+            clearTimeout(this.timer);
+        }
+        this.timeout = this.getTimeout();
+        console.log(this.timeout);
+        this.timer = setTimeout(() => {
+            console.log(this.state);
+            this.runRaft()
+        }, this.timeout);
+    }
+ 
+    /**
+     * Immediately resets the timer used to manage waiting times
+     */
+    resetTimerNow() {
+        if (this.timer !== null) {
+            clearTimeout(this.timer);
+        }
+        this.timeout = this.getTimeout();
+        console.log(this.timeout);
+        this.timer = setTimeout(() => {
+            console.log(this.state);
+            this.runRaft()
+        }, 0);
     }
 
     /**
-     * 
+     * Assigns the timeout value based on the current state of the Raft node.
+     * @returns - The timeout to keep the leader alive if the Node is a leader or the timeout to start a new election if the Node is a follower
+     */
+    getTimeout() {
+        return this.state === raftStates.LEADER ? 1000 : Math.floor(Math.random() * (6000 - 3000) + 3000);
+    }
+
+    /**
+     * Stops the timer if the Raft node's state is FOLLOWER.
+     */
+    stopTimer() {
+        console.log('timer has been stopped');
+        if (this.state === raftStates.FOLLOWER) clearTimeout(this.timer);
+    }
+
+    /**
+     * Sends heartbeat to all nodes in the cluster.
      */
     async sendHeartbeats() {
-        while (this.state === raftStates.LEADER) {
-
-            for (const node of this.nodes) {
-                try {
-                    await axios.post(`http://localhost:300${node}/receive-heartbeat`, {
-                        term: this.currentTerm,
-                        leaderId: this.id,
-                        newLogEntry: this.newLogEntry,
-                        lastLogIndex: this.log.getLastIndex(),
-                        lastLogTerm: this.log.getLastTerm(),
-                        leaderCommitIndex: this.commitIndex
-                    }).then((response) => {
-                        console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
-                        console.log(response.data);
-                        if (response.data.success === true) {
-                            console.log("New log appended successfuly");
-                        }
-                    });
-                } catch (error) {
-                    console.error(`Error sending heartbeat to ${node}:`, error.message);
-                }
+        for (const node of this.nodes) {
+            try {
+                await axios.post(`http://localhost:300${node}/receive-heartbeat`, {
+                    term: this.currentTerm,
+                    leaderId: this.id,
+                    newLogEntry: this.newLogEntry,
+                    lastLogIndex: this.log.getLastIndex(),
+                    lastLogTerm: this.log.getLastTerm(),
+                    leaderCommitIndex: this.commitIndex
+                }).then((response) => {
+                    console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
+                    console.log(response.data);
+                    if (response.data.term > this.currentTerm) {
+                        this.currentTerm = response.data.term;
+                        this.setState(raftStates.FOLLOWER);
+                    } else if (response.data.result) {
+                        console.log('log appended successfully!');
+                    }
+                });
+            } catch (error) {
+                console.error(`Error sending heartbeat to ${node}:`, error.message);
             }
-            this.newLogEntry = null;
-            await new Promise(resolve => setTimeout(resolve, 5000));
         }
     }
 
     /**
-     * 
-     * @param {*} request 
+     * Appends a new log entry to the log if the current node is the leader.
+     * @param {object} request - The POST request to add in the log.
      */
     appendLogEntry(request) {
         if (this.state === raftStates.LEADER) {
@@ -198,6 +191,9 @@ class RaftNode {
         }
     }
 
+    /**
+     * Initiates the process of replicating logs by sending heartbeats to all nodes in the cluster.
+     */
     async replicateLogs() {
 
         this.sendHeartbeats();
@@ -205,7 +201,7 @@ class RaftNode {
     }
 
     /**
-     * Initiate the process of checking the availability of nodes in the cluster.
+     * Start the process of checking the availability of nodes in the cluster - Starting point for each node.
      */
     async init() {
         await this.fetchNodes();
@@ -226,7 +222,7 @@ class RaftNode {
             }
         }
         console.log('All nodes are running!');
-        this.runRaft();
+        this.resetTimer();
     }
 
     /**
@@ -269,9 +265,9 @@ class RaftNode {
                 this.sendHeartbeats();
             }
         } else {
-            this.startElectionTimeout();
+            this.startElection();
         }
-        this.startElectionTimeout();
+        this.resetTimer();
     }
 }
 

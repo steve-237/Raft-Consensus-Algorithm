@@ -20,38 +20,37 @@ app.get('/isAvailable', (req, res) => {
 app.post('/requestVote', (req, res) => {
     const { candidateId, candidateTerm, candidateLastLogIndex, candidateLastLogTerm, candidateLogLength } = req.body;
     console.log(`received from candidate ${candidateId}, ${candidateTerm}, ${candidateLastLogIndex}, ${candidateLastLogTerm}, ${candidateLogLength}`)
-
-    raftNode.voteRequestReceived = true;
+    raftNode.stopTimer();
 
     console.log(`Vote request received from ${candidateId} at term ${raftNode.currentTerm} of Node${raftNode.id}`);
 
     const lastLog = raftNode.log.getLastEntry();
     const lastTerm = lastLog ? lastLog.term : 0;
 
-    const logOk = candidateLastLogTerm > lastTerm || (candidateLastLogTerm === lastTerm && candidateLogLength >= raftNode.log.getLogLength());
+    //const logOk = candidateLastLogTerm > lastTerm || (candidateLastLogTerm === lastTerm && candidateLogLength >= raftNode.log.getLogLength());
 
-    if (candidateTerm < raftNode.currentTerm || !logOk || raftNode.votedFor !== null && raftNode.votedFor !== candidateId) {
-        res.json({ nodeId: raftNode.id, voteGranted: false, term: raftNode.currentTerm });
+    if (candidateTerm < raftNode.currentTerm || raftNode.votedFor !== null && raftNode.votedFor !== candidateId) {
+        resstatus(200).json({ nodeId: raftNode.id, voteGranted: false, term: raftNode.currentTerm });
     } else {
         raftNode.currentTerm = candidateTerm;
         raftNode.votedFor = candidateId;
         raftNode.setState(raftStates.FOLLOWER);
-        res.json({ nodeId: raftNode.id, voteGranted: true, term: raftNode.currentTerm });
+        res.status(200).json({ nodeId: raftNode.id, voteGranted: true, term: raftNode.currentTerm });
     }
 });
 
 app.post('/receive-heartbeat', (req, res) => {
     const { term, leaderId, newLogEntry, lastLogIndex, lastLogTerm, leaderCommitIndex } = req.body;
-    raftNode.stopHeartbeatTimer();
+    raftNode.stopTimer();
     raftNode.leaderId = leaderId;
-    raftNode.voteRequestReceived = true;
+    raftNode.setState(raftStates.FOLLOWER);
+    raftNode.votedFor = null;
 
     console.log("Heartbeat received from Node" + leaderId + " at term " + term);
     console.log(`[Node${raftNode.id}] currentTerm = ${raftNode.currentTerm}`);
 
     if (term > raftNode.currentTerm) {
         raftNode.currentTerm = term;
-        raftNode.votedFor = null;
         raftNode.setState(raftStates.FOLLOWER);
     }
 
@@ -82,7 +81,7 @@ app.post('/receive-heartbeat', (req, res) => {
         res.status(200).send({ Node: raftNode.id, term: raftNode.currentTerm, success: true });
         return;
     }
-    raftNode.heartbeatInterval();
+    raftNode.resetTimer();
     res.status(200).send('Heartbeat received!');
 });
 
