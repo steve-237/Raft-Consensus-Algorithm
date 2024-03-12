@@ -1,4 +1,4 @@
-#!/bin/bash
+!/bin/bash
 
 # Function to display an error and exit
 display_error() {
