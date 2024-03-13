@@ -160,7 +160,7 @@ class RaftNode {
                 await axios.post(`http://localhost:300${node}/append-entries`, {
                     term: this.currentTerm,
                     leaderId: this.id,
-                    newLogEntry: this.newLogEntry,
+                    entries: null,
                     lastLogIndex: this.log.getLastIndex(),
                     lastLogTerm: this.log.getLastTerm(),
                     leaderCommitIndex: this.commitIndex
@@ -189,11 +189,11 @@ class RaftNode {
     async replicateLog(node) {
         const lastLogIndex = this.log.getLastIndex();
         console.log("Last log Index : " + lastLogIndex);
-        console.log("Next Index : " + this.nextIndex[node]);
+        console.log("Next Index : " + this.nextIndex[node - 1]);
 
         try {
-            while (lastLogIndex >= this.nextIndex[node]) {
-                const next = this.nextIndex[node];
+            while (lastLogIndex >= this.nextIndex[node - 1]) {
+                const next = this.nextIndex[node - 1];
                 let result;
 
                 try {
@@ -227,6 +227,7 @@ class RaftNode {
                     this.matchIndex[node] = lastLogIndex;
                     this.nextIndex[node] = this.matchIndex[node] + 1;
                 }
+
                 break;
             }
         } catch (error) {
@@ -250,9 +251,9 @@ class RaftNode {
      */
     async replicateLogs() {
         this.matchIndex[this.id] = this.log.getLastIndex();
-
-        for (let node of this.nodes) {
-            await this.replicateLog(node);
+        console.log(this.nodes)
+        for (const node of this.nodes) {
+            this.replicateLog(node);
         }
 
         while (true) {

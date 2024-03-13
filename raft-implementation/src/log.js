@@ -12,7 +12,7 @@ class Log {
 
     /**
      * Appends a new Entry in the log.
-     * @param {objet} entry - New entry
+     * @param {object} entry - New entry
      */
     addEntry(entry){
         this.log.push(entry);
@@ -79,14 +79,15 @@ class Log {
                 throw new Error("Entries will not be transferred");
             }
             if(offset < this.log.length) {
-                if(this.log[offset].equals(entry)){
+                /* if(this.log[offset].equals(entry)){
                     continue;
-                }
+                } */
                 for(let i = this.log.length -1; i >= offset; i--) {
                     this.log.pop();
                 }
             }
             this.addEntry(entry);
+            console.log(this.log)
         }
     }
 

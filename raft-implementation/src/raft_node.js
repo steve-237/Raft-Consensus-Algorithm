@@ -161,7 +161,6 @@ app.all('*', async function (req, res, next) {
                 let body = '';
 
                 req.on('data', chunk => {
-                    console.log("Chunk start:" + chunk + ": Chunk end.");
                     body += chunk.toString();
                 });
                 req.on('end', async () => {
@@ -174,8 +173,6 @@ app.all('*', async function (req, res, next) {
                         headers: req.headers,
                         timestamp: new Date().toISOString()
                     };
-                    console.log('Data to be processed with Raft:', request);
-
                     try {
                         raftNode.receiveNewEntry(request);
                     } catch (error) {
