@@ -1,31 +1,31 @@
 #!/bin/bash
 
-# Function to display an error and exit
+# Display an error and exit
 display_error() {
   echo "Error: $1"
   exit 1
 }
 
-# Function to set debconf selections for MariaDB
+# Set debconf selections for MariaDB
 set_mariadb_debconf() {
   debconf-set-selections <<< "mariadb-server mysql-server/root_password password root"
   debconf-set-selections <<< "mariadb-server mysql-server/root_password_again password root"
 }
 
-# Function to set debconf selections for Postfix
+# Set debconf selections for Postfix
 set_postfix_debconf() {
   debconf-set-selections <<< "postfix postfix/mailname string localhost"
   debconf-set-selections <<< "postfix postfix/main_mailer_type string 'Internet Site'"
   debconf-set-selections <<< "postfix postfix/destinations string localhost.localdomain, localhost, root@localhost, root@fau.de"
 }
 
-# Function to install packages
+# Install packages
 install_packages() {
   apt-get update
   apt-get install -y nginx php8.1 php8.1-fpm php8.1-mysql mariadb-server poppler-utils git
 }
 
-# Function to configure Nginx
+# Configure Nginx
 configure_nginx() {
   nginx_config="/etc/nginx/sites-available/hotcrp"
   [ -e "$nginx_config" ] && rm -f "$nginx_config"
@@ -40,6 +40,12 @@ server {
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
     }
+    
+    #Interprets php page using fastcgi-php before sending them to the client
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
+    }
 }
 EOF
 
@@ -48,7 +54,7 @@ EOF
   systemctl restart nginx
 }
 
-# Function to install MariaDB
+# Install MariaDB
 install_mariadb() {
   set_mariadb_debconf
   install_packages
@@ -56,14 +62,14 @@ install_mariadb() {
   echo "y" | sudo apt autoremove
 }
 
-# Function to run HotCRP database configuration script
+# Run HotCRP database configuration script
 configure_hotcrp_db() {
   git clone https://github.com/kohler/hotcrp.git /var/www/html/hotcrp
   cd /var/www/html/hotcrp
   (echo "ok\n"; printf "conference\n") | ./lib/createdb.sh
 }
 
-# Function to update PHP settings
+# Update PHP settings
 update_php_settings() {
   php_ini="/etc/php/8.1/fpm/php.ini"
   sed -i 's/upload_max_filesize = .*/upload_max_filesize = 15M/' "$php_ini"
@@ -74,14 +80,14 @@ update_php_settings() {
   systemctl restart php8.1-fpm
 }
 
-# Function to modify MariaDB configuration file
+# Modify MariaDB configuration file
 modify_mariadb_config() {
   mariadb_conf="/etc/mysql/mariadb.conf.d/50-server.cnf"
   echo -e "[mysqld]\nmax_allowed_packet=32M" >> "$mariadb_conf"
   systemctl restart mariadb
 }
 
-# Function to install Postfix
+# Install Postfix
 install_postfix() {
   set_postfix_debconf
   apt-get install -y postfix
@@ -97,7 +103,7 @@ install_mariadb
 configure_nginx
 configure_hotcrp_db
 update_php_settings
-odify_mariadb_config
+modify_mariadb_config
 install_postfix
 
 # Display installation completion message with default values
