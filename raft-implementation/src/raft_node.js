@@ -8,7 +8,16 @@ const RaftNode = require('./raft'),
     NODE_ID = parseInt(process.argv[2]),
     raftNode = new RaftNode(NODE_ID);
 
+    let serversId = [];
+
 app.use(express.json({ limit: '10mb' })); //increase the size of the parsed payload in the body of a request
+
+app.post('/update', (req, res) => {
+    serversId = req.body;
+    console.log('Updated server list received:', serversId);
+    raftNode.nodes = serversId;
+    res.sendStatus(200);
+});
 
 /**
  * This route checks the availability of a Node
@@ -99,13 +108,12 @@ app.post('/requestVote', (req, res) => {
 app.post('/append-entries', async (req, res) => {
     const { term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit } = req.body;
 
-    //raftNode.stopTimer();
     raftNode.leaderId = leaderId;
     raftNode.setState(raftStates.FOLLOWER);
     raftNode.votedFor = null;
 
     const prevLogEntry = raftNode.log.getEntry(prevLogIndex);
-    console.log("previous log for Follower node : " + prevLogEntry );
+    console.log("previous log for Follower node : ", prevLogEntry);
     if (term < raftNode.currentTerm || (entries && (!prevLogEntry || prevLogEntry.term !== prevLogTerm))) {
         console.log(`Append from ${leaderId} rejected`);
         res.status(200).json({ Node: raftNode.id, term: raftNode.currentTerm, success: false });
@@ -190,5 +198,12 @@ app.all('*', async function (req, res, next) {
 
 app.listen(3000 + NODE_ID, () => {
     console.log(`Node running on port ${3000 + NODE_ID}`);
+    axios.post(`http://localhost:3006/register`, {nodeId: NODE_ID})
+        .then(response => {
+            console.log('Server registered with manager.');
+        })
+        .catch(error => {
+            console.error('Error registering with manager:', error.message);
+        });
     raftNode.init();
 });

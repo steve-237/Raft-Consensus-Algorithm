@@ -53,7 +53,9 @@ class RaftNode {
         let votePromises = [];
 
         this.nodes.forEach(nodeId => {
-            votePromises.push(this.requestVote(nodeId));
+            if (nodeId !== this.id) {
+                votePromises.push(this.requestVote(nodeId));
+            }
         });
 
         votePromises.reduce((promiseChain, currentPromise) => {
@@ -73,8 +75,8 @@ class RaftNode {
                 if (this.votesReceived > this.nodes.length / 2) {
                     this.setState(raftStates.LEADER);
                     this.leaderId = this.id;
-                    this.nextIndex = Array(3).fill(this.log.getLastIndex() + 1);
-                    this.matchIndex = Array(3).fill(0);
+                    this.nextIndex = Array(this.nodes.length).fill(this.log.getLastIndex() + 1);
+                    this.matchIndex = Array(this.nodes.length).fill(0);
                     console.log("Contenu de this.nextIndex :", this.nextIndex);
                     console.log("Contenu de this.matchIndex :", this.matchIndex);
                     console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
@@ -114,7 +116,7 @@ class RaftNode {
      */
     handleVoteResponse(response) {
         console.log(response);
-        if(response){
+        if (response) {
             if (response.term > this.currentTerm) {
                 this.currentTerm = response.term;
                 this.setState(raftStates.FOLLOWER);
@@ -177,27 +179,29 @@ class RaftNode {
      */
     async sendHeartbeats() {
         for (const node of this.nodes) {
-            try {
-                await axios.post(`http://localhost:300${node}/append-entries`, {
-                    term: this.currentTerm,
-                    leaderId: this.id,
-                    entries: null,
-                    lastLogIndex: this.log.getLastIndex(),
-                    lastLogTerm: this.log.getLastTerm(),
-                    leaderCommitIndex: this.commitIndex
-                }).then(async (response) => {
-                    console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
-                    console.log(response.data);
-                    if (response.data.term > this.currentTerm) {
-                        this.currentTerm = response.data.term;
-                        this.setState(raftStates.FOLLOWER);
-                        return;
-                    } else if (!response.data.success) {
-                        await this.replicateLog(node);
-                    }
-                });
-            } catch (error) {
-                console.error(`Error sending heartbeat to ${node}:`, error.message);
+            if (node !== this.id) {
+                try {
+                    await axios.post(`http://localhost:300${node}/append-entries`, {
+                        term: this.currentTerm,
+                        leaderId: this.id,
+                        entries: null,
+                        lastLogIndex: this.log.getLastIndex(),
+                        lastLogTerm: this.log.getLastTerm(),
+                        leaderCommitIndex: this.commitIndex
+                    }).then(async (response) => {
+                        console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
+                        console.log(response.data);
+                        if (response.data.term > this.currentTerm) {
+                            this.currentTerm = response.data.term;
+                            this.setState(raftStates.FOLLOWER);
+                            return;
+                        } else if (!response.data.success) {
+                            await this.replicateLog(node);
+                        }
+                    });
+                } catch (error) {
+                    console.error(`Error sending heartbeat to ${node}:`, error.message);
+                }
             }
         }
     }
@@ -274,14 +278,16 @@ class RaftNode {
         this.matchIndex[this.id] = this.log.getLastIndex();
         console.log(this.nodes)
         for (const node of this.nodes) {
-            this.replicateLog(node);
+            if (node !== this.id) {
+                this.replicateLog(node);
+            }
         }
 
         while (true) {
             let N = this.commitIndex + 1;
             let matchCount = this.matchIndex.reduce((count, mi) => mi >= N ? count + 1 : count, 0);
 
-            if (matchCount >= this.nodes.length/ 2 + 1 && this.log.getEntry(N).term === this.currentTerm) {
+            if (matchCount >= this.nodes.length / 2 + 1 && this.log.getEntry(N).term === this.currentTerm) {
                 this.commitIndex++;
                 this.lastApplied++;
             } else {
@@ -296,16 +302,23 @@ class RaftNode {
      * Start the process of checking the availability of nodes in the cluster - Starting point for each node.
      */
     async init() {
-        await this.fetchNodes();
+        //await this.fetchNodes();
+        while (this.nodes.length < 3) {
+            console.log("Waiting for at least nodes...");
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
         let allPortsListening = false;
         while (!allPortsListening) {
             allPortsListening = true;
             console.log("Port verification is starting...");
             for (const nodeId of this.nodes) {
-                const isListening = await this.checkConnection(nodeId);
-                if (!isListening) {
-                    allPortsListening = false;
-                    console.log(`Node ${nodeId} is not yet up.`);
+                if (nodeId !== this.id) {
+                    const isListening = await this.checkConnection(nodeId);
+                    if (!isListening) {
+                        allPortsListening = false;
+                        console.log(`Node ${nodeId} is not yet up.`);
+                    }
                 }
             }
             if (!allPortsListening) {
@@ -329,20 +342,6 @@ class RaftNode {
             return response.data;
         } catch (error) {
             return false;
-        }
-    }
-
-    /**
-     * Retrieve the list of nodes id available in the cluster from the cluster manager.
-     */
-    async fetchNodes() {
-        try {
-            const response = await axios.get('http://localhost:3004/cluster/nodes');
-            //filter nodes id list to exclude the current node id
-            this.nodes = response.data.filter(nodeId => nodeId !== this.id);
-            console.log('Nodes are fetched: ', this.nodes);
-        } catch (error) {
-            console.error('Error fetching nodes:', error.message);
         }
     }
 

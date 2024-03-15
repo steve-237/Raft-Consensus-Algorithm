@@ -1,14 +1,39 @@
 const express = require('express'),
     axios = require('axios'),
     app = express(),
-    PORT = 3004,
-    nodes = [1, 2, 3];
+    registeredIds = new Set(),
+    PORT = 3006;
+
+let nodes = [];
 
 app.use(express.json());
 
-//send the list of server ID of the raft cluster
-app.get('/cluster/nodes', (req, res) => {
-    res.status(200).send(nodes);
+/**
+ * 
+ */
+app.post('/register', (req, res) => {
+    const { nodeId } = req.body;
+
+    if (!registeredIds.has(nodeId)) {
+        registeredIds.add(nodeId);
+        console.log(`Server ${nodeId} registered.`);
+        res.sendStatus(200);
+        console.log(`Registered servers id : ${[...registeredIds]}`);
+
+    } else {
+        console.error(`Server ${nodeId} already registered.`);
+        res.status(400).send(`Server ${nodeId} already registered.`);
+    }
+
+    registeredIds.forEach(id => {
+        axios.post(`http://localhost:300${id}/update`, [...registeredIds])
+            .then(response => {
+                console.log(`Updated server list sent to ${id}`);
+            })
+            .catch(error => {
+                console.error(`Error sending update to ${id}: ${error.message}`);
+            });
+    });
 });
 
 app.listen(PORT, () => {
