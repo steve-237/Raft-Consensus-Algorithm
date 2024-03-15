@@ -40,7 +40,7 @@ class RaftNode {
     }
 
     /**
-     * Initiates the election process.
+     * Starts the election process.
      */
     startElection() {
         this.votesReceived = 0;
@@ -49,9 +49,40 @@ class RaftNode {
         this.votedFor = this.id;
         this.votesReceived++;
         console.log(`The node ${this.id} on state ${this.state} is starting the election`);
-        Promise.all(this.nodes.map(nodeId => this.requestVote(nodeId)))
+
+        let votePromises = [];
+
+        this.nodes.forEach(nodeId => {
+            votePromises.push(this.requestVote(nodeId));
+        });
+
+        votePromises.reduce((promiseChain, currentPromise) => {
+            return promiseChain.then(() => {
+                return currentPromise.then(response => {
+                    this.handleVoteResponse(response);
+                }).catch(error => {
+                    console.error("An error occurred while sending vote request:", error);
+                });
+            });
+        }, Promise.resolve())
             .then(() => {
-                console.log("All vote requests habe been sent.");
+                console.log("All vote requests have been sent and processed.");
+                console.log(`Node${this.id} received ${this.votesReceived} votes`);
+
+                // becomes leader if the majority of nodes vote for this node
+                if (this.votesReceived > this.nodes.length / 2) {
+                    this.setState(raftStates.LEADER);
+                    this.leaderId = this.id;
+                    this.nextIndex = Array(3).fill(this.log.getLastIndex() + 1);
+                    this.matchIndex = Array(3).fill(0);
+                    console.log("Contenu de this.nextIndex :", this.nextIndex);
+                    console.log("Contenu de this.matchIndex :", this.matchIndex);
+                    console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
+                    this.resetTimerNow();
+                }
+            })
+            .catch(error => {
+                console.error("An error occurred while processing vote requests:", error);
             });
     }
 
@@ -59,23 +90,22 @@ class RaftNode {
      * Sends vote request to specific node.
      * @param {number} nodeId - Identifier of the node to which the vote request should be send.
      */
-    requestVote(nodeId) {
-        console.log("the vote request is sending...");
-
-        axios.post(`http://localhost:300${nodeId}/requestVote`, {
-            candidateId: this.id,
-            candidateTerm: this.currentTerm,
-            candidateLastLogIndex: this.log.getLastIndex(),
-            candidateLastLogTerm: this.log.getLastIndex(),
-            candidateLogLength: this.log.getLogLength(),
-        })
-            .then(response => {
-                console.log(`Vote Request sent to Node${nodeId}`);
-                this.handleVoteResponse(response);
-            })
-            .catch(error => {
-                console.error('Error sending vote Request:', error.message);
+    async requestVote(nodeId) {
+        try {
+            const response = await axios.post(`http://localhost:300${nodeId}/requestVote`, {
+                candidateId: this.id,
+                candidateTerm: this.currentTerm,
+                candidateLastLogIndex: this.log.getLastIndex(),
+                candidateLastLogTerm: this.log.getLastIndex(),
+                candidateLogLength: this.log.getLogLength(),
             });
+
+            console.log(`Vote Request sent to Node${nodeId}`);
+            return response.data;
+        } catch (error) {
+            console.error('Error sending vote Request:', error.message);
+            //throw error;
+        }
     }
 
     /**
@@ -83,24 +113,15 @@ class RaftNode {
      * @param {object} response - Vote response of a node.
      */
     handleVoteResponse(response) {
-        console.log(response.data);
-        if (response.data.term > this.currentTerm) {
-            this.currentTerm = response.data.term;
-            this.setState(raftStates.FOLLOWER);
-            return;
-        }
-        if (this.state === raftStates.CANDIDATE && response.data && response.data.term === this.currentTerm && response.data.voteGranted) {
-            this.votesReceived++;
-            console.log(`Node${this.id} received ${this.votesReceived} votes`);
-            if (this.votesReceived > this.nodes.length / 2) {
-                this.setState(raftStates.LEADER);
-                this.leaderId = this.id;
-                this.nextIndex = Array(3).fill(this.log.getLastIndex() + 1);
-                this.matchIndex = Array(3).fill(0);
-                console.log("Contenu de this.nextIndex :", this.nextIndex);
-                console.log("Contenu de this.matchIndex :", this.matchIndex);
-                this.resetTimerNow();
-                console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
+        console.log(response);
+        if(response){
+            if (response.term > this.currentTerm) {
+                this.currentTerm = response.term;
+                this.setState(raftStates.FOLLOWER);
+                return;
+            }
+            if (this.state === raftStates.CANDIDATE && response.term === this.currentTerm && response.voteGranted) {
+                this.votesReceived++;
             }
         }
     }
@@ -260,7 +281,7 @@ class RaftNode {
             let N = this.commitIndex + 1;
             let matchCount = this.matchIndex.reduce((count, mi) => mi >= N ? count + 1 : count, 0);
 
-            if (matchCount >= this.nodes.length / 2 + 1 && this.log.getEntry(N).term === this.currentTerm) {
+            if (matchCount >= this.nodes.length/ 2 + 1 && this.log.getEntry(N).term === this.currentTerm) {
                 this.commitIndex++;
                 this.lastApplied++;
             } else {
