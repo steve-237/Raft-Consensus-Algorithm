@@ -1,6 +1,8 @@
 const axios = require('axios'),
     LogEntry = require('./logEntry'),
     raftStates = require('./raftStates'),
+    httpProxy = require('http-proxy'),
+    proxy = httpProxy.createProxyServer({}),
     Log = require('./log');
 
 class RaftNode {
@@ -185,8 +187,8 @@ class RaftNode {
                         term: this.currentTerm,
                         leaderId: this.id,
                         entries: null,
-                        lastLogIndex: this.log.getLastIndex(),
-                        lastLogTerm: this.log.getLastTerm(),
+                        prevLogIndex: this.log.getLastIndex(),
+                        prevLogTerm: this.log.getLastTerm(),
                         leaderCommitIndex: this.commitIndex
                     }).then(async (response) => {
                         console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
@@ -224,8 +226,8 @@ class RaftNode {
                 try {
                     const prevEntry = this.log.getEntry(next - 1);
                     console.log("Previous Entry Index: " + prevEntry.index);
-                    const prevLogIndex = prevEntry !== undefined ? prevEntry.index : 0;
-                    const prevLogTerm = prevEntry !== undefined ? prevEntry.term : 0;
+                    const prevLogIndex = prevEntry.index;
+                    const prevLogTerm = prevEntry.term;
 
                     const response = await axios.post(`http://localhost:300${node}/append-entries`, {
                         term: this.currentTerm,
@@ -233,7 +235,7 @@ class RaftNode {
                         prevLogIndex: prevLogIndex,
                         prevLogTerm: prevLogTerm,
                         entries: this.log.getEntriesFrom(next),
-                        leaderCommit: this.commitIndex
+                        leaderCommitIndex: this.commitIndex
                     });
 
                     result = response.data;
@@ -243,14 +245,19 @@ class RaftNode {
                         this.setState(raftStates.FOLLOWER);
                         return;
                     }
+
+                    if (result.success) {
+                        this.matchIndex[node - 1] = lastLogIndex;
+                        this.nextIndex[node - 1] = this.matchIndex[node - 1] + 1;
+                    } else {
+                        this.nextIndex[node - 1]--;
+                        if (this.nextIndex[node - 1] < this.log.getFirstIndex()) {
+                            console.log('Decrement nextIndex and retry');
+                        }
+                    }
                 } catch (error) {
                     console.error(`Append Entries failed for Node${node} : ${error.message}`);
                     break;
-                }
-
-                if (result.success) {
-                    this.matchIndex[node] = lastLogIndex;
-                    this.nextIndex[node] = this.matchIndex[node] + 1;
                 }
 
                 break;
@@ -275,7 +282,7 @@ class RaftNode {
      * Initiates the process of replicating logs by sending heartbeats to all nodes in the cluster.
      */
     async replicateLogs() {
-        this.matchIndex[this.id] = this.log.getLastIndex();
+        this.matchIndex[this.id - 1] = this.log.getLastIndex();
         console.log(this.nodes)
         for (const node of this.nodes) {
             if (node !== this.id) {
@@ -283,19 +290,34 @@ class RaftNode {
             }
         }
 
-        while (true) {
-            let N = this.commitIndex + 1;
-            let matchCount = this.matchIndex.reduce((count, mi) => mi >= N ? count + 1 : count, 0);
-
-            if (matchCount >= this.nodes.length / 2 + 1 && this.log.getEntry(N).term === this.currentTerm) {
-                this.commitIndex++;
-                this.lastApplied++;
-            } else {
-                break;
+        let N = -1;
+        for (let i = this.commitIndex + 1; i < this.log.getLogLength(); i++) {
+            let count = 0;
+            if (this.log.getEntry(i).term === this.currentTerm) {
+                for (let j = 0; j < this.matchIndex.length; j++) {
+                    if (this.matchIndex[j] >= i) {
+                        count++;
+                    }
+                }
+                if (count > this.matchIndex.length / 2) {
+                    N = i;
+                }
             }
-
-            this.sendHeartbeats();
         }
+
+        // If such N is found, update commitIndex
+        if (N !== -1) {
+            this.commitIndex = N;
+            this.lastApplied++;
+            console.log(this.log.getLog());
+
+            //proxy.web(this.log.getLastEntry().request, res, { target: `http://localhost` });
+            this.nextIndex[this.id - 1] = this.matchIndex[this.id - 1] + 1;
+            console.log("Match index : ", this.matchIndex);
+            console.log("Next index : ", this.nextIndex);
+        }
+
+        this.sendHeartbeats();
     }
 
     /**

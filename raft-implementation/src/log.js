@@ -21,7 +21,10 @@ class Log {
      */
     addEntry(entry) {
         this.log.push(entry);
-        console.log(this.log);
+    }
+
+    getLog() {
+        return this.log;
     }
 
     getEntry(index) {
@@ -94,7 +97,7 @@ class Log {
                 }
             }
             this.addEntry(entry);
-            console.log("The new log entry have been store :",this.log)
+            console.log("The new log entry have been store :", this.log)
         }
     }
 

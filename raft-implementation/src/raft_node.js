@@ -59,7 +59,7 @@ app.post('/requestVote', (req, res) => {
  * Handles the reception of a heartbeat from the leader.
  */
 /*app.post('/receive-heartbeat', (req, res) => {
-    const { term, leaderId, newLogEntry, lastLogIndex, lastLogTerm, leaderCommitIndex } = req.body;
+    const { term, leaderId, newLogEntry, lastLogIndex, lastLogTerm, leaderCommitIndexIndex } = req.body;
     raftNode.stopTimer();
     raftNode.leaderId = leaderId;
     raftNode.setState(raftStates.FOLLOWER);
@@ -81,8 +81,8 @@ app.post('/requestVote', (req, res) => {
             }
         }
 
-        if (leaderCommitIndex > raftNode.commitIndex) {
-            const lastIndex = Math.min(leaderCommitIndex, raftNode.log.length - 1);
+        if (leaderCommitIndexIndex > raftNode.commitIndex) {
+            const lastIndex = Math.min(leaderCommitIndexIndex, raftNode.log.length - 1);
             raftNode.commitIndex = lastIndex;
         }
 
@@ -106,7 +106,7 @@ app.post('/requestVote', (req, res) => {
 */
 
 app.post('/append-entries', async (req, res) => {
-    const { term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit } = req.body;
+    const { term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommitIndex } = req.body;
 
     raftNode.leaderId = leaderId;
     raftNode.setState(raftStates.FOLLOWER);
@@ -131,15 +131,19 @@ app.post('/append-entries', async (req, res) => {
         raftNode.log.storeEntries(entries);
     }
 
-    if (leaderCommit > raftNode.commitIndex) {
-        console.log(`leaderCommit: ${leaderCommit}; commitIndex: ${raftNode.commitIndex} lastApplied: ${raftNode.lastApplied}`);
+    console.log('Leader Commit ', leaderCommitIndex);
 
-        raftNode.commitIndex = Math.min(leaderCommit, raftNode.log.getLastIndex());
+    if (leaderCommitIndex > raftNode.commitIndex) {
+        console.log(`leaderCommitIndex: ${leaderCommitIndex}; commitIndex: ${raftNode.commitIndex} lastApplied: ${raftNode.lastApplied}`);
+
+        raftNode.commitIndex = Math.min(leaderCommitIndex, raftNode.log.getLastIndex());
 
         // Apply entries to the state Machine here
         while (raftNode.lastApplied < raftNode.commitIndex) {
             raftNode.lastApplied++;
             console.log(`Apply: ${raftNode.lastApplied}`);
+            console.log(`The new log has been applied on the ${raftNode.state}`);
+            //proxy.web(request, res, { target: `${req.protocol}://${req.hostname}` });
         }
     }
     res.status(200).json({ Node: raftNode.id, term: raftNode.currentTerm, success: true });
