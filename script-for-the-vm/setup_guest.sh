@@ -21,11 +21,18 @@ ssh_authorized_keys:
   - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDQEJDJ1NumNqzheCCr2i4C7IyNSWR9uUii6+37gBjFXeseR21d3oTGZ5dOfNXRo+ac1oFiS4ezooxp8oJZ95OqjUgVkqmHRwbhwuxetWw1yK/dT1DjUwxSo4UNOauqnFrQo7rlB9+jCbWAnyjaf2ythT9x4OnP+0M7RKkbIcj/eTi1q+TOEEIA/VH8Z8L4NJDMl4njIOoUZ4Fj9nv2cgv1c6WFRPlMUQ5S2K0yEcyjtHOKP2eY4Pj2ynB+UERHXY1vHGG95ip1Nzd8Gy7TZrD5Q+4UtjRnlJw2ZKn1ejnbRSY0nW+/FTW7hLpBbUa0WUEQrm/S8bMHUX8z3CGkNhvYSHxSVVoTcT/XgqpGsfb8dRu4qj49l0xd2Z7h1lcSbcPNGoMNtUvwDYQBfvi47tWmpMTcJ1VMb9sPztGINWJC3KNsMA/aOPS9L4wur1lR4BmsN5ov5S0Ojh7BCktycmomYeu/d7MYsEXv+qgb18zAgt1JejSAUK/TMmdyGc4VrSk= messadi@epyc1 
 runcmd:  
  - apt-get update
- - apt-get upgrade 
- - apt-get install clang make libpcre2-dev libdb5.3-dev libdb5.3 libssl-dev -y
+ - apt-get upgrade
+  - sudo apt purge 'mysql*'
+ - sudo apt purge 'mariadb*'
+ - sudo apt autoremove
+ - sudo apt autoclean
+ - apt-get install clang make libpcre2-dev libdb5.3-dev libdb5.3 libssl-dev nodejs npm -y
+ - sudo npm install -g express
  - sudo useradd -m exim
  - usermod --password $(echo password | openssl passwd -1 -stdin) exim 
  - dpkg -i /snp/*
+ - sudo chmod u+x dhclient.sh
+ - ./dhclient.sh
  - sudo chmod u+x install_hotcrp.sh
  - ./install_hotcrp.sh
  - update-grub2
@@ -51,6 +58,7 @@ mount_fs() {
     sudo mkdir -p /tmp/sev-guest/snp
 }
 mount_fs
+sudo cp dhclient.sh /tmp/sev-guest/
 sudo cp install_hotcrp.sh /tmp/sev-guest/
 sudo cp snp-release-2023-11-16/linux/guest/* /tmp/sev-guest/snp
 unmount_fs() {
