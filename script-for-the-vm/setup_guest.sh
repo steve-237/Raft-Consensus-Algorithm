@@ -28,6 +28,7 @@ runcmd:
  - sudo apt autoclean
  - apt-get install clang make libpcre2-dev libdb5.3-dev libdb5.3 libssl-dev nodejs npm -y
  - sudo npm install -g express
+ - sudo npm install
  - sudo useradd -m exim
  - usermod --password $(echo password | openssl passwd -1 -stdin) exim 
  - dpkg -i /snp/*
@@ -58,6 +59,7 @@ mount_fs() {
     sudo mkdir -p /tmp/sev-guest/snp
 }
 mount_fs
+sudo cp raft/* /tmp/sev-guest/home/ubuntu/raft/
 sudo cp dhclient.sh /tmp/sev-guest/
 sudo cp install_hotcrp.sh /tmp/sev-guest/
 sudo cp snp-release-2023-11-16/linux/guest/* /tmp/sev-guest/snp
