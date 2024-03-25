@@ -22,11 +22,14 @@ ssh_authorized_keys:
 runcmd:  
  - apt-get update
  - apt-get upgrade
-  - sudo apt purge 'mysql*'
+ - sudo apt purge 'mysql*'
  - sudo apt purge 'mariadb*'
  - sudo apt autoremove
  - sudo apt autoclean
- - apt-get install clang make libpcre2-dev libdb5.3-dev libdb5.3 libssl-dev nodejs npm -y
+ - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+ - source ~/.bashrc
+ - nvm install 18
+ - apt-get install clang make libpcre2-dev libdb5.3-dev libdb5.3 libssl-dev npm -y
  - sudo npm install -g express
  - sudo npm install
  - sudo useradd -m exim
