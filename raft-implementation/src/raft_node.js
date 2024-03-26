@@ -1,6 +1,7 @@
 const RaftNode = require('./raft'),
     express = require('express'),
     app = express(),
+    os = require('os'),
     httpProxy = require('http-proxy'),
     proxy = httpProxy.createProxyServer({}),
     raftStates = require('./raftStates'),
@@ -8,12 +9,12 @@ const RaftNode = require('./raft'),
     NODE_ID = parseInt(process.argv[2]),
     raftNode = new RaftNode(NODE_ID);
 
-    let serversId = [];
+let serversId = [];
 
 app.use(express.json({ limit: '10mb' })); //increase the size of the parsed payload in the body of a request
 
 app.post('/update', (req, res) => {
-    serversId = req.body;
+    serversId = req.body.registeredNodes;
     console.log('Updated server list received:', serversId);
     raftNode.nodes = serversId;
     res.sendStatus(200);
@@ -27,7 +28,8 @@ app.get('/isAvailable', (req, res) => {
 });
 
 /**
- * Handles a vote request send by a candidate.
+ * Handles a vote request send by a candidate to a follower.
+ * The response will be send back to the candidate. 
  */
 app.post('/requestVote', (req, res) => {
     const { candidateId, candidateTerm, candidateLastLogIndex, candidateLastLogTerm, candidateLogLength } = req.body;
@@ -55,60 +57,11 @@ app.post('/requestVote', (req, res) => {
     }
 });
 
-/**
- * Handles the reception of a heartbeat from the leader.
- */
-/*app.post('/receive-heartbeat', (req, res) => {
-    const { term, leaderId, newLogEntry, lastLogIndex, lastLogTerm, leaderCommitIndexIndex } = req.body;
-    raftNode.stopTimer();
-    raftNode.leaderId = leaderId;
-    raftNode.setState(raftStates.FOLLOWER);
-    raftNode.votedFor = null;
-
-    console.log("Heartbeat received from Node" + leaderId + " at term " + term);
-    console.log(`[Node${raftNode.id}] currentTerm = ${raftNode.currentTerm}`);
-
-    if (term > raftNode.currentTerm) {
-        raftNode.currentTerm = term;
-        raftNode.setState(raftStates.FOLLOWER);
-    }
-
-
-    if (newLogEntry !== null) {
-        /* if (lastLogIndex < raftNode.log.getLogLength() && raftNode.log.getLastEntry().term === lastLogTerm) {
-            if (raftNode.log.getLastEntry().term !== newLogEntry.term) {
-                raftNode.log.splice(lastLogIndex);
-            }
-        }
-
-        if (leaderCommitIndexIndex > raftNode.commitIndex) {
-            const lastIndex = Math.min(leaderCommitIndexIndex, raftNode.log.length - 1);
-            raftNode.commitIndex = lastIndex;
-        }
-
-        console.log(`Leader Term = ${term} - Follower Term = ${raftNode.currentTerm}`);
-        console.log(`lastLogIndex= ${lastLogIndex} - raftNode.log.length = ${raftNode.log.length}`);
-        if (lastLogIndex - 1 >= 0 && lastLogIndex - 1 < raftNode.log.length) {
-            const lastLogEntry = raftNode.log[lastLogIndex - 1];
-            console.log(`raftNode.log[lastLogIndex].term= ${lastLogEntry.term} - lastLogTerm = ${lastLogTerm}`);
-            if (term < raftNode.currentTerm || lastLogEntry.term !== lastLogTerm) {
-                res.status(200).send({ Node: raftNode.id, term: raftNode.currentTerm, success: false });
-                return;
-            }
-        } 
-        raftNode.log.addEntry(newLogEntry);
-        res.status(200).send({ Node: raftNode.id, term: raftNode.currentTerm, success: true });
-        return;
-    }
-    raftNode.resetTimer();
-    res.status(200).send('Heartbeat received!');
-});
-*/
-
 app.post('/append-entries', async (req, res) => {
-    const { term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommitIndex } = req.body;
+    const { term, leaderId, leaderIpAddress, prevLogIndex, prevLogTerm, entries, leaderCommitIndex } = req.body;
 
     raftNode.leaderId = leaderId;
+    raftNode.leaderIpAddress = leaderIpAddress;
     raftNode.setState(raftStates.FOLLOWER);
     raftNode.votedFor = null;
 
@@ -143,7 +96,7 @@ app.post('/append-entries', async (req, res) => {
             raftNode.lastApplied++;
             console.log(`Apply: ${raftNode.lastApplied}`);
             console.log(`The new log has been applied on the ${raftNode.state}`);
-            //proxy.web(request, res, { target: `${req.protocol}://${req.hostname}` });
+            //proxy.web(prevLogEntry.request, { target: `http://localhost/` });
         }
     }
     res.status(200).json({ Node: raftNode.id, term: raftNode.currentTerm, success: true });
@@ -151,7 +104,7 @@ app.post('/append-entries', async (req, res) => {
 });
 
 /**
- * Middleware to intercepts all requests.
+ * Middleware to intercepts all incoming requests.
  */
 app.all('*', async function (req, res, next) {
 
@@ -166,7 +119,7 @@ app.all('*', async function (req, res, next) {
         if (req.method === 'POST') {
 
             if (raftNode.state !== 'LEADER') {
-                const redirectUrl = `http://localhost:300${raftNode.leaderId}${req.originalUrl}`;
+                const redirectUrl = `http://${raftNode.leaderIpAddress}:300${raftNode.leaderId}${req.originalUrl}`;
                 console.log(`Redirection of the request to the leader: ${redirectUrl}`);
                 proxy.web(req, res, { target: `${req.protocol}://${req.hostname}:300${raftNode.leaderId}` });
             } else {
@@ -202,12 +155,44 @@ app.all('*', async function (req, res, next) {
 
 app.listen(3000 + NODE_ID, () => {
     console.log(`Node running on port ${3000 + NODE_ID}`);
-    axios.post(`http://localhost:3006/register`, {nodeId: NODE_ID})
+
+    const interfaceName = 'enp0s3';
+    const ipAddress = getIPAddress(interfaceName);
+    console.log(`IP address of ${interfaceName}: ${ipAddress}`);
+
+    const nodeData = {
+        nodeId: NODE_ID,
+        nodeIpAddress: ipAddress
+    };
+
+    axios.post(`http://localhost:3006/register`, nodeData)
         .then(response => {
             console.log('Server registered with manager.');
         })
         .catch(error => {
             console.error('Error registering with manager:', error.message);
         });
+
     raftNode.init();
 });
+
+/**
+ * Retrieves the IPv4 address of the specified network interface.
+ * 
+ * @param {string} interfaceName - The name of the network interface.
+ * @returns {string} - The IPv4 address of the specified interface if found, otherwise an error message.
+ */
+function getIPAddress(interfaceName) {
+    const networkInterfaces = os.networkInterfaces();
+
+    if (networkInterfaces.hasOwnProperty(interfaceName)) {
+        const interfaceInfo = networkInterfaces[interfaceName].find(info => info.family === 'IPv4');
+        if (interfaceInfo) {
+            return interfaceInfo.address;
+        } else {
+            return `No IPv4 address found for interface ${interfaceName}`;
+        }
+    } else {
+        return `Interface ${interfaceName} not found`;
+    }
+}

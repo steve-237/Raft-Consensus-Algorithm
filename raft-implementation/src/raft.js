@@ -23,7 +23,7 @@ class RaftNode {
         this.matchIndex = []; //for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
 
         this.leaderId = null;
-        this.leaderIsAvailable = false;
+        this.leaderIpAddress = null;
         this.nodes = [];
 
         this.votedFor = null;
@@ -54,9 +54,9 @@ class RaftNode {
 
         let votePromises = [];
 
-        this.nodes.forEach(nodeId => {
-            if (nodeId !== this.id) {
-                votePromises.push(this.requestVote(nodeId));
+        this.nodes.forEach(node => {
+            if (node.nodeId !== this.id) {
+                votePromises.push(this.requestVote(node));
             }
         });
 
@@ -77,6 +77,15 @@ class RaftNode {
                 if (this.votesReceived > this.nodes.length / 2) {
                     this.setState(raftStates.LEADER);
                     this.leaderId = this.id;
+
+                    for (const node of this.nodes) {
+                        if (node.nodeId === this.leaderId) {
+                            this.leaderIpAddress = node.nodeIpAddress;
+                            console.log("Leader IP Address : ", this.leaderIpAddress);
+                            break;
+                        }
+                    }
+
                     this.nextIndex = Array(this.nodes.length).fill(this.log.getLastIndex() + 1);
                     this.matchIndex = Array(this.nodes.length).fill(0);
                     console.log("Contenu de this.nextIndex :", this.nextIndex);
@@ -92,11 +101,11 @@ class RaftNode {
 
     /**
      * Sends vote request to specific node.
-     * @param {number} nodeId - Identifier of the node to which the vote request should be send.
+     * @param {object} node - Identifier of the node to which the vote request should be send.
      */
-    async requestVote(nodeId) {
+    async requestVote(node) {
         try {
-            const response = await axios.post(`http://localhost:300${nodeId}/requestVote`, {
+            const response = await axios.post(`http://${node.nodeIpAddress}:300${node.nodeId}/requestVote`, {
                 candidateId: this.id,
                 candidateTerm: this.currentTerm,
                 candidateLastLogIndex: this.log.getLastIndex(),
@@ -104,7 +113,7 @@ class RaftNode {
                 candidateLogLength: this.log.getLogLength(),
             });
 
-            console.log(`Vote Request sent to Node${nodeId}`);
+            console.log(`Vote Request sent to Node${node.nodeId}`);
             return response.data;
         } catch (error) {
             console.error('Error sending vote Request:', error.message);
@@ -181,17 +190,18 @@ class RaftNode {
      */
     async sendHeartbeats() {
         for (const node of this.nodes) {
-            if (node !== this.id) {
+            if (node.nodeId !== this.id) {
                 try {
-                    await axios.post(`http://localhost:300${node}/append-entries`, {
+                    await axios.post(`http://${node.nodeIpAddress}:300${node.nodeId}/append-entries`, {
                         term: this.currentTerm,
                         leaderId: this.id,
+                        leaderIpAddress: this.leaderIpAddress,
                         entries: null,
                         prevLogIndex: this.log.getLastIndex(),
                         prevLogTerm: this.log.getLastTerm(),
                         leaderCommitIndex: this.commitIndex
                     }).then(async (response) => {
-                        console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node);
+                        console.log("Heartbeat sent from the " + this.state + " with the ID " + this.id + " to Node" + node.nodeId);
                         console.log(response.data);
                         if (response.data.term > this.currentTerm) {
                             this.currentTerm = response.data.term;
@@ -202,7 +212,7 @@ class RaftNode {
                         }
                     });
                 } catch (error) {
-                    console.error(`Error sending heartbeat to ${node}:`, error.message);
+                    console.error(`Error sending heartbeat to ${node.nodeId}:`, error.message);
                 }
             }
         }
@@ -216,54 +226,51 @@ class RaftNode {
     async replicateLog(node) {
         const lastLogIndex = this.log.getLastIndex();
         console.log("Last log Index : " + lastLogIndex);
-        console.log("Next Index : " + this.nextIndex[node - 1]);
+        console.log("Next Index : " + this.nextIndex[node.nodeId - 1]);
 
-        try {
-            while (lastLogIndex >= this.nextIndex[node - 1]) {
-                const next = this.nextIndex[node - 1];
-                let result;
+        while (lastLogIndex >= this.nextIndex[node.nodeId - 1]) {
+            const next = this.nextIndex[node.nodeId - 1];
+            let result;
 
-                try {
-                    const prevEntry = this.log.getEntry(next - 1);
-                    console.log("Previous Entry Index: " + prevEntry.index);
-                    const prevLogIndex = prevEntry.index;
-                    const prevLogTerm = prevEntry.term;
+            try {
+                const prevEntry = this.log.getEntry(next - 1);
+                console.log("Previous Entry Index: " + prevEntry.index);
+                const prevLogIndex = prevEntry.index;
+                const prevLogTerm = prevEntry.term;
 
-                    const response = await axios.post(`http://localhost:300${node}/append-entries`, {
-                        term: this.currentTerm,
-                        leaderId: this.id,
-                        prevLogIndex: prevLogIndex,
-                        prevLogTerm: prevLogTerm,
-                        entries: this.log.getEntriesFrom(next),
-                        leaderCommitIndex: this.commitIndex
-                    });
+                const response = await axios.post(`http://${node.nodeIpAddress}:300${node.nodeId}/append-entries`, {
+                    term: this.currentTerm,
+                    leaderId: this.id,
+                    prevLogIndex: prevLogIndex,
+                    prevLogTerm: prevLogTerm,
+                    entries: this.log.getEntriesFrom(next),
+                    leaderCommitIndex: this.commitIndex
+                });
 
-                    result = response.data;
+                result = response.data;
 
-                    if (result.term > this.currentTerm) {
-                        this.currentTerm = result.term;
-                        this.setState(raftStates.FOLLOWER);
-                        return;
-                    }
-
-                    if (result.success) {
-                        this.matchIndex[node - 1] = lastLogIndex;
-                        this.nextIndex[node - 1] = this.matchIndex[node - 1] + 1;
-                    } else {
-                        this.nextIndex[node - 1]--;
-                        if (this.nextIndex[node - 1] < this.log.getFirstIndex()) {
-                            console.log('Decrement nextIndex and retry');
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Append Entries failed for Node${node} : ${error.message}`);
-                    break;
+                if (result.term > this.currentTerm) {
+                    this.currentTerm = result.term;
+                    this.setState(raftStates.FOLLOWER);
+                    return;
                 }
 
+                if (result.success) {
+                    this.matchIndex[node.nodeId - 1] = lastLogIndex;
+                    this.nextIndex[node.nodeId - 1] = this.matchIndex[node.nodeId - 1] + 1;
+                } else {
+                    this.nextIndex[node.nodeId - 1]--;
+                    if (this.nextIndex[node.nodeId - 1] < this.log.getFirstIndex()) {
+                        console.log('Decrement nextIndex and retry');
+                        //TODO: implement the logic to handle this case
+                    }
+                }
+            } catch (error) {
+                console.error(`Append Entries failed for Node${node.nodeId} : ${error.message}`);
                 break;
             }
-        } catch (error) {
-            console.error(`Error occurred during replication for Node${node}: ${error.message}`);
+
+            break;
         }
     }
 
@@ -285,7 +292,7 @@ class RaftNode {
         this.matchIndex[this.id - 1] = this.log.getLastIndex();
         console.log(this.nodes)
         for (const node of this.nodes) {
-            if (node !== this.id) {
+            if (node.nodeId !== this.id) {
                 this.replicateLog(node);
             }
         }
@@ -326,7 +333,7 @@ class RaftNode {
     async init() {
         //await this.fetchNodes();
         while (this.nodes.length < 3) {
-            console.log("Waiting for at least nodes...");
+            console.log("Waiting for at least 3 nodes...");
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
@@ -334,12 +341,12 @@ class RaftNode {
         while (!allPortsListening) {
             allPortsListening = true;
             console.log("Port verification is starting...");
-            for (const nodeId of this.nodes) {
-                if (nodeId !== this.id) {
-                    const isListening = await this.checkConnection(nodeId);
+            for (const node of this.nodes) {
+                if (node.nodeId !== this.id) {
+                    const isListening = await this.checkConnection(node);
                     if (!isListening) {
                         allPortsListening = false;
-                        console.log(`Node ${nodeId} is not yet up.`);
+                        console.log(`Node ${node.nodeId} is not yet up.`);
                     }
                 }
             }
@@ -354,12 +361,12 @@ class RaftNode {
 
     /**
      * Check if the current node can communicate with a specific node.
-     * @param {number} nodeId -  Identifier of the node to check.
+     * @param {object} node -  Node to be check.
      * @returns True if the node is available, otherwise False.
      */
-    async checkConnection(nodeId) {
+    async checkConnection(node) {
         try {
-            const response = await axios.get(`http://localhost:300${nodeId}/isAvailable`);
+            const response = await axios.get(`http://${node.nodeIpAddress}:300${node.nodeId}/isAvailable`);
             console.log(response.data);
             return response.data;
         } catch (error) {
