@@ -21,15 +21,15 @@ app.post('/update', (req, res) => {
 });
 
 /**
- * This route checks the availability of a Node
+ * Checks the availability of a Node
  */
 app.get('/isAvailable', (req, res) => {
     res.status(200).send(true);
 });
 
 /**
- * Handles a vote request send by a candidate to a follower.
- * The response will be send back to the candidate. 
+ * Handles the request for voting from a candidate node.
+ * Responds to the candidate with a vote grant or denial based on the Raft protocol.
  */
 app.post('/requestVote', (req, res) => {
     const { candidateId, candidateTerm, candidateLastLogIndex, candidateLastLogTerm, candidateLogLength } = req.body;
@@ -57,6 +57,9 @@ app.post('/requestVote', (req, res) => {
     }
 });
 
+/**
+ * Handles the request for appending entries from the leader node.
+ */
 app.post('/append-entries', async (req, res) => {
     const { term, leaderId, leaderIpAddress, prevLogIndex, prevLogTerm, entries, leaderCommitIndex } = req.body;
 
