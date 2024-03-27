@@ -22,23 +22,14 @@ ssh_authorized_keys:
 runcmd:  
  - apt-get update
  - apt-get upgrade
- - sudo apt purge 'mysql*'
- - sudo apt purge 'mariadb*'
- - sudo apt autoremove
- - sudo apt autoclean
- - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
- - source ~/.bashrc
- - nvm install 18
- - apt-get install clang make libpcre2-dev libdb5.3-dev libdb5.3 libssl-dev npm -y
- - sudo npm install -g express
- - sudo npm install
+ - apt-get install clang make libpcre2-dev libdb5.3-dev libdb5.3 libssl-dev -y
  - sudo useradd -m exim
  - usermod --password $(echo password | openssl passwd -1 -stdin) exim 
  - dpkg -i /snp/*
  - sudo chmod u+x dhclient.sh
- - ./dhclient.sh
+ - sudo ./dhclient.sh
  - sudo chmod u+x install_hotcrp.sh
- - ./install_hotcrp.sh
+ - sudo ./install_hotcrp.sh
  - update-grub2
  - shutdown now
 final_message: "Cloud init is done! Restart the VM" 
@@ -62,10 +53,11 @@ mount_fs() {
     sudo mkdir -p /tmp/sev-guest/snp
 }
 mount_fs
-sudo cp raft/* /tmp/sev-guest/home/ubuntu/raft/
+sudo mkdir -p /tmp/sev-guest/home/ubuntu/raft/
+sudo cp -r raft/* /tmp/sev-guest/home/ubuntu/raft/
 sudo cp dhclient.sh /tmp/sev-guest/
 sudo cp install_hotcrp.sh /tmp/sev-guest/
-sudo cp snp-release-2023-11-16/linux/guest/* /tmp/sev-guest/snp
+sudo cp snp-release-2024-03-12/linux/guest/* /tmp/sev-guest/snp
 unmount_fs() {
     sudo umount /tmp/sev-guest
     sudo qemu-nbd --disconnect /dev/nbd$NBD_INDEX

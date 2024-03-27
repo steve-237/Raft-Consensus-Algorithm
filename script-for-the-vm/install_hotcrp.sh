@@ -22,7 +22,13 @@ set_postfix_debconf() {
 # Install packages
 install_packages() {
   apt-get update
-  apt-get install -y nginx php8.1 php8.1-fpm php8.1-mysql mariadb-server poppler-utils git
+  apt purge 'mysql*' -y
+  apt purge 'mariadb*' -y
+  apt autoremove -y
+  apt autoclean -y
+  apt-get install -y nginx php8.1 php8.1-fpm php8.1-mysql mariadb-server poppler-utils npm nodejs git
+  npm install -g express
+  npm install
 }
 
 # Configure Nginx
