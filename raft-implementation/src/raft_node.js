@@ -7,7 +7,8 @@ const RaftNode = require('./raft'),
     raftStates = require('./raftStates'),
     axios = require('axios'),
     NODE_ID = parseInt(process.argv[2]),
-    raftNode = new RaftNode(NODE_ID);
+    raftNode = new RaftNode(NODE_ID)
+PORT = 3000 + NODE_ID;
 
 let serversId = [];
 
@@ -156,8 +157,8 @@ app.all('*', async function (req, res, next) {
     }
 });
 
-app.listen(3000 + NODE_ID, () => {
-    console.log(`Node running on port ${3000 + NODE_ID}`);
+app.listen(PORT, () => {
+    console.log(`Node running on port ${PORT}`);
 
     const interfaceName = 'enp0s3';
     const ipAddress = getIPAddress(interfaceName);
