@@ -125,7 +125,7 @@ app.all('*', async function (req, res, next) {
             if (raftNode.state !== 'LEADER') {
                 const redirectUrl = `http://${raftNode.leaderIpAddress}:300${raftNode.leaderId}${req.originalUrl}`;
                 console.log(`Redirection of the request to the leader: ${redirectUrl}`);
-                proxy.web(req, res, { target: `${req.protocol}://${req.hostname}:300${raftNode.leaderId}` });
+                proxy.web(req, res, { target: `${req.protocol}://${raftNode.leaderIpAddress}:300${raftNode.leaderId}` });
             } else {
                 let body = '';
 
