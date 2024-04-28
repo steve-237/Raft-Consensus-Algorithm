@@ -1,17 +1,17 @@
 const RaftNode = require('./raft'),
     express = require('express'),
-    app = express(),
     os = require('os'),
+    app = express(),
     httpProxy = require('http-proxy'),
     proxy = httpProxy.createProxyServer({}),
     raftStates = require('./raftStates'),
     axios = require('axios'),
     NODE_ID = parseInt(process.argv[2]),
-    raftNode = new RaftNode(NODE_ID)
-PORT = 3000 + NODE_ID;
+    raftNode = new RaftNode(NODE_ID),
+    PORT = 3000 + NODE_ID;
 
 let serversId = [];
-
+let responseToClient = {};
 app.use(express.json({ limit: '10mb' })); //increase the size of the parsed payload in the body of a request
 
 app.post('/update', (req, res) => {
@@ -100,7 +100,21 @@ app.post('/append-entries', async (req, res) => {
             raftNode.lastApplied++;
             console.log(`Apply: ${raftNode.lastApplied}`);
             console.log(`The new log has been applied on the ${raftNode.state}`);
-            //proxy.web(prevLogEntry.request, { target: `http://localhost/` });
+            delete prevLogEntry.request.headers.host;
+            prevLogEntry.request.headers.host = `localhost:${PORT}`
+            //axios.post(`http://localhost${prevLogEntry.request.url}`, prevLogEntry.request.body, prevLogEntry.request.headers)
+            axios.post(prevLogEntry.request.url, prevLogEntry.request.body, {
+                headers: prevLogEntry.request.headers,
+                maxRedirects: 0,
+                validateStatus: null,
+            }).then((response) => {
+                console.log('[Request Applied to the application.]', response.data);
+                responseToClient.writeHead(response.status, response.headers);
+                responseToClient.end(response.data)
+            })
+                .catch(error => {
+                    console.error('Error the request to the application:', error.message);
+                });
         }
     }
     res.status(200).json({ Node: raftNode.id, term: raftNode.currentTerm, success: true });
@@ -119,28 +133,26 @@ app.all('*', async function (req, res, next) {
     //Handles client request
     if (!userAgent.includes('axios')) {
         console.log('Request', req.protocol, req.method, req.url);
-        let request = req;
+        let request = {};
         if (req.method === 'POST') {
 
             if (raftNode.state !== 'LEADER') {
-                const redirectUrl = `http://${raftNode.leaderIpAddress}:300${raftNode.leaderId}${req.originalUrl}`;
-                console.log(`Redirection of the request to the leader: ${redirectUrl}`);
-                proxy.web(req, res, { target: `${req.protocol}://${raftNode.leaderIpAddress}:300${raftNode.leaderId}` });
+                responseToClient = res;
+                console.log(`Redirection of the request to the leader: Node${raftNode.leaderId}`);
+                proxy.web(req, res, { target: `${req.protocol}://${raftNode.leaderIpAddress}:300${raftNode.leaderId}`, selfHandleResponse: true });
             } else {
                 let body = '';
 
                 req.on('data', chunk => {
                     body += chunk.toString();
                 });
-                req.on('end', async () => {
+                req.on('end', () => {
                     request = {
-                        method: req.method,
-                        url: req.originalUrl,
+                        hostname: req.hostname,
+                        url: req.url,
                         body: body,
-                        params: req.params,
-                        query: req.query,
                         headers: req.headers,
-                        timestamp: new Date().toISOString()
+                        path: req.path
                     };
                     try {
                         raftNode.receiveNewEntry(request);
@@ -149,9 +161,30 @@ app.all('*', async function (req, res, next) {
                         res.status(500).send('Error appending the Log Entry');
                     }
                 });
+                const checkMajority = setInterval(async () => {
+                    console.log("Is Majority Confirmed ? = ", raftNode.majorityConfirmed);
+
+
+                    if (raftNode.majorityConfirmed) {
+                        clearInterval(checkMajority);
+
+                        const response = await axios.post(request.url, request.body, {
+                            headers: request.headers,
+                            maxRedirects: 0,
+                            validateStatus: null,
+                        })
+
+                        console.log('[Request Applied to the application.]', response.data);
+                        console.log('Status = ', response.status)
+                        console.log('headers = ', response.headers);
+                        res.writeHead(response.status, response.headers);
+                        res.end(response.data)
+                    }
+                }, 500)
             }
+        } else {
+            proxy.web(req, res, { target: `${req.protocol}://${req.hostname}` });
         }
-        proxy.web(request, res, { target: `${req.protocol}://${req.hostname}` });
     } else {
         next();
     }
@@ -170,7 +203,7 @@ app.listen(PORT, () => {
     };
 
     axios.post(`http://localhost:3006/register`, nodeData)
-        .then(response => {
+        .then(() => {
             console.log('Server registered with manager.');
         })
         .catch(error => {

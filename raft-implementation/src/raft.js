@@ -31,6 +31,8 @@ class RaftNode {
 
         this.timer = null;
         this.timeout = null;
+
+        this.majorityConfirmed = false;
     }
 
     /**
@@ -174,7 +176,7 @@ class RaftNode {
      * @returns - The timeout to keep the leader alive if the Node is a leader or the timeout to start a new election if the Node is a follower
      */
     getTimeout() {
-        return this.state === raftStates.LEADER ? 5000 : Math.floor(Math.random() * (12000 - 6000) + 6000);
+        return this.state === raftStates.LEADER ? 3000 : Math.floor(Math.random() * (8000 - 5000) + 5000);
     }
 
     /**
@@ -315,10 +317,9 @@ class RaftNode {
         // If such N is found, update commitIndex
         if (N !== -1) {
             this.commitIndex = N;
+            this.majorityConfirmed = true;
             this.lastApplied++;
             console.log(this.log.getLog());
-
-            //proxy.web(this.log.getLastEntry().request, res, { target: `http://localhost` });
             this.nextIndex[this.id - 1] = this.matchIndex[this.id - 1] + 1;
             console.log("Match index : ", this.matchIndex);
             console.log("Next index : ", this.nextIndex);
