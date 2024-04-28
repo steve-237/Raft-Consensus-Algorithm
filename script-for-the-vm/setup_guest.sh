@@ -55,6 +55,7 @@ mount_fs() {
 mount_fs
 sudo mkdir -p /tmp/sev-guest/home/ubuntu/raft/
 sudo cp -r raft/* /tmp/sev-guest/home/ubuntu/raft/
+sudo cp rc.local /tmp/sev-guest/etc/
 sudo cp dhclient.sh /tmp/sev-guest/
 sudo cp install_hotcrp.sh /tmp/sev-guest/
 sudo cp snp-release-2024-03-12/linux/guest/* /tmp/sev-guest/snp

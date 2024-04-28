@@ -1,0 +1,12 @@
+#!/bin/bash
+
+#retrieves the ip address of the VM
+sudo dhclient
+
+#executes the raft-node with the VM instance ID, provided as an argument lauching the VM
+ID_FILE="/sys/firmware/qemu_fw_cfg/by_name/opt/com.example.id/raw"
+ID=$(cat "$ID_FILE")
+if [ -n "$ID" ]; then
+   #/usr/bin/node /home/ubuntu/raft/raft-node.js $ID > /home/ubuntu/raft/node.log 2>&1 &
+fi
+exit 0

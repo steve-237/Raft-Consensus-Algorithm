@@ -18,13 +18,6 @@ SysVStartPriority=99
 WantedBy=multi-user.target
 EOF
 
-# execute dhclient when the VM is starting up
-sudo cat > /etc/rc.local << EOF
-#!/bin/bash
-sudo dhclient
-exit 0
-EOF
-
 sudo chmod +x /etc/rc.local
 sudo systemctl enable rc-local
 sudo systemctl start rc-local
