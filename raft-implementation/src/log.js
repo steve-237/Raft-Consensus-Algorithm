@@ -16,17 +16,26 @@ class Log {
     }
 
     /**
-     * Appends a new Entry in the log.
+     * Store a new Entry in the log.
      * @param {object} entry - New entry
      */
     addEntry(entry) {
         this.log.push(entry);
     }
 
+    /**
+     * Get the log
+     * @returns - Log
+     */
     getLog() {
         return this.log;
     }
 
+    /**
+     * Get a log entry
+     * @param {number} index - Index of the log entry to retrieve
+     * @returns - A log entry
+     */
     getEntry(index) {
         let offset = index - this.firstIndex;
         if (offset >= this.log.length || offset < 0) {
@@ -35,6 +44,10 @@ class Log {
         return this.log[offset];
     }
 
+    /**
+     * Get the last last log entry
+     * @returns - Log entry
+     */
     getLastEntry() {
         if (this.log.length === 0) {
             return 0;
@@ -42,19 +55,36 @@ class Log {
         return this.log[this.log.length - 1];
     }
 
+    /**
+     * Get the index of the last log entry
+     * @returns - Index of the last log entry
+     */
     getLastIndex() {
         const lastEntry = this.getLastEntry();
         return lastEntry ? lastEntry.index : 0;
     }
 
+    /**
+     * Get the term of the last log entry
+     * @returns - Term of the last log entry
+     */
     getLastTerm() {
         const lastEntry = this.getLastEntry();
         return lastEntry ? lastEntry.term : 0;
     }
+
+    /**
+     * Get the fisrt index in the log
+     * @returns - First term
+     */
     getFirstIndex() {
         return this.firstIndex;
     }
 
+    /**
+     * Get the length of the log
+     * @returns - The length of the log
+     */
     getLogLength() {
         return this.log.length;
     }
