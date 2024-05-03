@@ -3,7 +3,8 @@ const axios = require('axios'),
     raftStates = require('./raftStates'),
     httpProxy = require('http-proxy'),
     proxy = httpProxy.createProxyServer({}),
-    Log = require('./log');
+    Log = require('./log'),
+    fs = require('fs');
 
 class RaftNode {
     constructor(id) {
@@ -283,6 +284,7 @@ class RaftNode {
     receiveNewEntry(request) {
         if (this.state === raftStates.LEADER) {
             this.log.addEntry(new LogEntry(this.log.getLastIndex() + 1, this.currentTerm, request));
+            //this.persistLog();
             this.resetTimerNow();
         }
     }
@@ -326,6 +328,20 @@ class RaftNode {
         }
 
         this.sendHeartbeats();
+    }
+
+    persistLog() {
+        fs.writeFileSync(`log_node_${this.id}.json`, JSON.stringify(this.log));
+    }
+
+    loadLog(){
+        try{
+            this.log.loadLog(JSON.parse(fs.readFileSync(`log_node_${this.id}.json`)).log);
+            console.log(this.log);
+        } catch (err) {
+            console.error(`Error loading log for node ${this.id}`, err.message);
+            this.log = new Log();
+        }
     }
 
     /**

@@ -88,6 +88,7 @@ app.post('/append-entries', async (req, res) => {
 
     if (entries) {
         raftNode.log.storeEntries(entries);
+        //raftNode.persistLog();
     }
 
     console.log('Leader Commit ', leaderCommitIndex);
@@ -161,6 +162,13 @@ app.all('*', async function (req, res, next) {
                 });
 
             } else {
+                if (!req.headers.requestid) {
+                    requestId = uuidv4();
+                    responseMap.set(requestId, res);
+
+                    req.headers['requestid'] = requestId;
+                }
+                
                 let body = '';
 
                 req.on('data', chunk => {
@@ -169,11 +177,9 @@ app.all('*', async function (req, res, next) {
                 req.on('end', () => {
 
                     request = {
-                        hostname: req.hostname,
                         url: req.url,
                         body: body,
-                        headers: req.headers,
-                        path: req.path
+                        headers: req.headers
                     };
 
                     try {
@@ -187,11 +193,11 @@ app.all('*', async function (req, res, next) {
 
                 const checkMajority = setInterval(async () => {
 
-                    console.log("Is Majority Confirmed ? = ", raftNode.majorityConfirmed);
-
                     if (raftNode.majorityConfirmed) {
 
                         clearInterval(checkMajority);
+                        delete request.headers.host;
+                        request.headers.host = `localhost:${PORT}`;
 
                         const response = await axios.post(request.url, request.body, {
                             headers: request.headers,
@@ -199,12 +205,17 @@ app.all('*', async function (req, res, next) {
                             validateStatus: null,
                         })
 
-                        console.log('[Request Applied within the application.]', response.data);
-                        res.writeHead(response.status, response.headers);
-                        res.end(response.data)
-                    }
+                        let responseObject = responseMap.get(request.headers.requestid);
 
-                }, 500)
+                        if (responseObject) {
+                            responseObject.writeHead(response.status, response.headers);
+                            responseObject.end(response.data);
+                            responseMap.delete(request.headers.requestid);
+                        }
+
+                        console.log('[Request Applied within the application.]', response.data);
+                    }
+                }, 10);
             }
         } else {
             proxy.web(req, res, { target: `${req.protocol}://${req.hostname}` });
@@ -234,6 +245,7 @@ app.listen(PORT, () => {
             console.error('Error registering with manager:', error.message);
         });
 
+    //raftNode.loadLog();
     raftNode.init();
 });
 

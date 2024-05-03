@@ -103,6 +103,10 @@ class Log {
         return entries;
     }
 
+    loadLog(data) {
+        this.log = data;
+    }
+
     /**
      * Saves new logs entries
      * @param {object} entries - New log entries to store.
@@ -112,9 +116,6 @@ class Log {
             const offset = entry.index - this.firstIndex;
             if (offset < 0) {
                 throw new Error("Index is smaller than the first index of the log");
-            }
-            if (entry.request === null) {
-                throw new Error("Entries will not be transferred");
             }
             if (offset < this.log.length) {
                 if (this.log[offset].index === entry.index &&
