@@ -20,8 +20,8 @@ class RaftNode {
         this.lastApplied = 0; //index of highest log entry applied to state machine
 
         //volatile on leaders
-        this.nextIndex = []; //for each server, index of the next log entry to send to that server (initialized to leader last log index + 1)
-        this.matchIndex = []; //for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
+        this.nextIndex = {}; //for each server, index of the next log entry to send to that server (initialized to leader last log index + 1)
+        this.matchIndex = {}; //for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
 
         this.leaderId = null;
         this.leaderIpAddress = null;
@@ -89,8 +89,14 @@ class RaftNode {
                         }
                     }
 
-                    this.nextIndex = Array(this.nodes.length).fill(this.log.getLastIndex() + 1);
-                    this.matchIndex = Array(this.nodes.length).fill(0);
+                    console.log('Contenu de nodes', this.nodes)
+
+                    this.nodes.forEach(node => {
+                        const nodeId = node.nodeId
+                        this.nextIndex[nodeId] = this.log.getLastIndex() + 1;
+                        this.matchIndex[nodeId] = 0;
+                    })
+
                     console.log("Contenu de this.nextIndex :", this.nextIndex);
                     console.log("Contenu de this.matchIndex :", this.matchIndex);
                     console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
@@ -120,7 +126,6 @@ class RaftNode {
             return response.data;
         } catch (error) {
             console.error('Error sending vote Request:', error.message);
-            //throw error;
         }
     }
 
@@ -229,10 +234,10 @@ class RaftNode {
     async replicateLog(node) {
         const lastLogIndex = this.log.getLastIndex();
         console.log("Last log Index : " + lastLogIndex);
-        console.log("Next Index : " + this.nextIndex[node.nodeId - 1]);
+        console.log("Next Index : " + this.nextIndex[node.nodeId]);
 
-        while (lastLogIndex >= this.nextIndex[node.nodeId - 1]) {
-            const next = this.nextIndex[node.nodeId - 1];
+        while (lastLogIndex >= this.nextIndex[node.nodeId]) {
+            const next = this.nextIndex[node.nodeId];
             let result;
 
             try {
@@ -259,13 +264,13 @@ class RaftNode {
                 }
 
                 if (result.success) {
-                    this.matchIndex[node.nodeId - 1] = lastLogIndex;
-                    this.nextIndex[node.nodeId - 1] = this.matchIndex[node.nodeId - 1] + 1;
+                    this.matchIndex[node.nodeId] = lastLogIndex;
+                    this.nextIndex[node.nodeId] = this.matchIndex[node.nodeId] + 1;
                 } else {
-                    this.nextIndex[node.nodeId - 1]--;
-                    if (this.nextIndex[node.nodeId - 1] < this.log.getFirstIndex()) {
+                    this.nextIndex[node.nodeId] -= 1;
+                    if (this.nextIndex[node.nodeId] < this.log.getFirstIndex()) {
                         console.log('Decrement nextIndex and retry');
-                        //TODO: implement the logic to handle this case
+                        this.replicateLog(node);
                     }
                 }
             } catch (error) {
@@ -293,7 +298,7 @@ class RaftNode {
      * Initiates the process of replicating logs by sending heartbeats to all nodes in the cluster.
      */
     async replicateLogs() {
-        this.matchIndex[this.id - 1] = this.log.getLastIndex();
+        this.matchIndex[this.id] = this.log.getLastIndex();
         console.log(this.nodes)
         for (const node of this.nodes) {
             if (node.nodeId !== this.id) {
@@ -302,15 +307,19 @@ class RaftNode {
         }
 
         let N = -1;
+
         for (let i = this.commitIndex + 1; i < this.log.getLogLength(); i++) {
             let count = 0;
             if (this.log.getEntry(i).term === this.currentTerm) {
-                for (let j = 0; j < this.matchIndex.length; j++) {
-                    if (this.matchIndex[j] >= i) {
+
+                Object.keys(this.matchIndex).forEach(nodeId => {
+                    nodeId = parseInt(nodeId);
+                    if (this.matchIndex[nodeId] >= i) {
                         count++;
                     }
-                }
-                if (count > this.matchIndex.length / 2) {
+                })
+
+                if (count > Object.keys(this.matchIndex).length / 2) {
                     N = i;
                 }
             }
@@ -322,7 +331,7 @@ class RaftNode {
             this.majorityConfirmed = true;
             this.lastApplied++;
             console.log(this.log.getLog());
-            this.nextIndex[this.id - 1] = this.matchIndex[this.id - 1] + 1;
+            this.nextIndex[this.id] = this.matchIndex[this.id] + 1;
             console.log("Match index : ", this.matchIndex);
             console.log("Next index : ", this.nextIndex);
         }
@@ -334,8 +343,8 @@ class RaftNode {
         fs.writeFileSync(`log_node_${this.id}.json`, JSON.stringify(this.log));
     }
 
-    loadLog(){
-        try{
+    loadLog() {
+        try {
             this.log.loadLog(JSON.parse(fs.readFileSync(`log_node_${this.id}.json`)).log);
             console.log(this.log);
         } catch (err) {
