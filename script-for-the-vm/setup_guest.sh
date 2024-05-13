@@ -18,7 +18,7 @@ password: password
 chpasswd: { expire: False }
 ssh_pwauth: True 
 ssh_authorized_keys:   
-  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDQEJDJ1NumNqzheCCr2i4C7IyNSWR9uUii6+37gBjFXeseR21d3oTGZ5dOfNXRo+ac1oFiS4ezooxp8oJZ95OqjUgVkqmHRwbhwuxetWw1yK/dT1DjUwxSo4UNOauqnFrQo7rlB9+jCbWAnyjaf2ythT9x4OnP+0M7RKkbIcj/eTi1q+TOEEIA/VH8Z8L4NJDMl4njIOoUZ4Fj9nv2cgv1c6WFRPlMUQ5S2K0yEcyjtHOKP2eY4Pj2ynB+UERHXY1vHGG95ip1Nzd8Gy7TZrD5Q+4UtjRnlJw2ZKn1ejnbRSY0nW+/FTW7hLpBbUa0WUEQrm/S8bMHUX8z3CGkNhvYSHxSVVoTcT/XgqpGsfb8dRu4qj49l0xd2Z7h1lcSbcPNGoMNtUvwDYQBfvi47tWmpMTcJ1VMb9sPztGINWJC3KNsMA/aOPS9L4wur1lR4BmsN5ov5S0Ojh7BCktycmomYeu/d7MYsEXv+qgb18zAgt1JejSAUK/TMmdyGc4VrSk= messadi@epyc1 
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDhKao6zPRBuEGZU+qbC9RrgoT2M93Ek/ftLMdtlZvV7M1YWUwbw70DqoG+/IBSPIjIPACYT9qIJRXtWM/0DBLvXFzCDd4gPezVbnoVpT7nM+CIdX+ciqx4lHp5UUeCghEms6qo0cXIXjJW4yZgb7fOrW2xZYm0cdQlR0EKYIEXni3e1poHpfe8ZdwqFeqoc/jkK3cyPVUFEdgzrDkn6c+Ga+Ow1mGtrmINScIxFVHO6MW4MeofOEyDPqKnP0Zx4Fdc0HFN3GW438P+QlGNzWUSWDF1vC6s7tV71mBvUSh61MlH9ofb3q5EgqpyLquCW+38In0Ebir+C7Wu7cjhz6T0uZy5joM9MurOwu+iLHxKTFv46Eg17oU5s6wI8uf+GE8yHjRHgBCuBa2UljUeAym1w4j8tD4Opdco26Y7ZcaO7gHLp5GSe7ep54CbAspPKhEjpB0MM0fHEOFPD1BKcgfkTMWOEEI7ohbd4BG+e/1cS3xtqRwSqi+fQvWq7YID5nM= pegouen@i4epyc1
 runcmd:  
  - apt-get update
  - apt-get upgrade
@@ -28,8 +28,8 @@ runcmd:
  - dpkg -i /snp/*
  - sudo chmod u+x dhclient.sh
  - sudo ./dhclient.sh
- - sudo chmod u+x install_hotcrp.sh
- - sudo ./install_hotcrp.sh
+ - sudo chmod u+x /test-app/install_test-app.sh
+ - sudo ./test-app/install_test-app.sh
  - update-grub2
  - shutdown now
 final_message: "Cloud init is done! Restart the VM" 
@@ -48,6 +48,7 @@ trap cleanup EXIT
 mount_fs() {
     sudo modprobe nbd max_part=8
     sudo qemu-nbd --connect=/dev/nbd$NBD_INDEX sev-guest.qcow2
+    sleep 3
     sudo mkdir -p /tmp/sev-guest
     sudo mount /dev/nbd${NBD_INDEX}p1 /tmp/sev-guest/
     sudo mkdir -p /tmp/sev-guest/snp
@@ -57,7 +58,7 @@ sudo mkdir -p /tmp/sev-guest/home/ubuntu/raft/
 sudo cp -r raft/* /tmp/sev-guest/home/ubuntu/raft/
 sudo cp rc.local /tmp/sev-guest/etc/
 sudo cp dhclient.sh /tmp/sev-guest/
-sudo cp install_hotcrp.sh /tmp/sev-guest/
+sudo cp test-app/install_test-app.sh /tmp/sev-guest/
 sudo cp snp-release-2024-03-12/linux/guest/* /tmp/sev-guest/snp
 unmount_fs() {
     sudo umount /tmp/sev-guest
