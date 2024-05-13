@@ -28,7 +28,7 @@ runcmd:
  - dpkg -i /snp/*
  - sudo chmod u+x dhclient.sh
  - sudo ./dhclient.sh
- - sudo chmod u+x /test-app/install_test-app.sh
+ - sudo chmod u+x test-app/install_test-app.sh
  - sudo ./test-app/install_test-app.sh
  - update-grub2
  - shutdown now
