@@ -20,7 +20,7 @@ server {
     server_name localhost;
     root /var/www/html/test-app;
     index index.php;
-    access_log /var/log/nginx/full_access.log full;
+    #access_log /var/log/nginx/full_access.log full;
 
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
@@ -47,7 +47,7 @@ install_mariadb() {
 }
 
 configure_test-app() {
-  cp index.php /www/html/test-app
+  cp -r /test-app /var/www/html/
   cd /var/www/html/test-app
   ./create_db.sh
 }
