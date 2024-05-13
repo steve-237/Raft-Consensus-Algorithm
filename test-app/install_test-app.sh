@@ -11,7 +11,7 @@ install_packages() {
 }
 
 configure_nginx() {
-  nginx_config="/etc/nginx/sites-available/hotcrp"
+  nginx_config="/etc/nginx/sites-available/test-app"
   [ -e "$nginx_config" ] && rm -f "$nginx_config"
 
   cat <<EOF > "$nginx_config"
