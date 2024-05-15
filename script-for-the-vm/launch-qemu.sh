@@ -242,8 +242,13 @@ add_opts "-no-reboot"
 # The OVMF binary, including the non-volatile variable store, appears as a
 # "normal" qemu drive on the host side, and it is exposed to the guest as a
 # persistent flash device.
-add_opts "-drive if=pflash,format=raw,unit=0,file=${UEFI_CODE},readonly"
-add_opts "-drive if=pflash,format=raw,unit=1,file=${UEFI_VARS}"
+if [ "${SEV_SNP}" = 1 ]; then
+    add_opts "-bios ${UEFI_CODE}"
+    add_opts "-drive if=pflash,format=raw,unit=0,file=${UEFI_VARS}"
+else
+    add_opts "-drive if=pflash,format=raw,unit=0,file=${UEFI_CODE},readonly"
+    add_opts "-drive if=pflash,format=raw,unit=1,file=${UEFI_VARS}"
+fi
 
 # add CDROM if specified
 [ -n "${CDROM_FILE}" ] && add_opts "-drive file=${CDROM_FILE},media=cdrom -boot d"
