@@ -58,8 +58,9 @@ sudo mkdir -p /tmp/sev-guest/home/ubuntu/raft/
 sudo cp -r raft/* /tmp/sev-guest/home/ubuntu/raft/
 sudo cp rc.local /tmp/sev-guest/etc/
 sudo cp dhclient.sh /tmp/sev-guest/
-sudo cp test-app/install_test-app.sh /tmp/sev-guest/
-sudo cp snp-release-2024-03-12/linux/guest/* /tmp/sev-guest/snp
+sudo mkdir -p /tmp/sev-guest/test-app/
+sudo cp -r test-app/* /tmp/sev-guest/test-app/
+sudo cp snp-release-2024-05-02/linux/guest/* /tmp/sev-guest/snp
 unmount_fs() {
     sudo umount /tmp/sev-guest
     sudo qemu-nbd --disconnect /dev/nbd$NBD_INDEX
