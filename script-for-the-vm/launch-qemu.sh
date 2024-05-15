@@ -138,7 +138,7 @@ while [ -n "$1" ]; do
                                 shift
                                 ;;
                 -default-network[0-9]*)
-                                PORT="${1##*-default-network}"
+                                INSTANCE_ID="${1##*-default-network}"
                                 USE_DEFAULT_NETWORK="1"
                                 ;;
                 -default-network)
@@ -252,19 +252,18 @@ add_opts "-drive if=pflash,format=raw,unit=1,file=${UEFI_VARS}"
 # distros like Ubuntu 20.04 still only provide 4.1, so only enable
 # usermode network if specifically requested.
 if [ "$USE_DEFAULT_NETWORK" = "1" ]; then
-    #if [[ "$PORT" =~ ^[0-9]+$ ]]; then
-        # Calculate the new port number
-        NEW_PORT=$((4000 + PORT))
- #       add_opts "-netdev user,id=vmnic,hostfwd=tcp::${new_port}-:22 -device e1000,netdev=vmnic,romfile="
-    #else
-     #   add_opts "-netdev user,id=vmnic"
-    #fi
+    #PORT=$((3000 + INSTANCE_ID))
     #echo "guest port 22 is fwd to host 8000..."
-    add_opts "-netdev tap,id=vmnic${PORT},ifname=tapgh${PORT},script=no,downscript=no -device e1000,netdev=vmnic${PORT},mac=52:54:00:12:34:5${PORT},romfile="  #for hostfwd with tap l should use -redir tcp:8080:>    #add_opts "-netdev socket,id=vmnic${PORT},listen=:${NEW_PORT}"
-    #add_opts "-netdev user,id=vmnic${PORT},hostfwd=tcp::${NEW_PORT}-:80 -device e1000,netdev=vmnic${PORT},romfile="
+    add_opts "-netdev tap,id=vmnic${INSTANCE_ID},ifname=tapgh${INSTANCE_ID},script=no,downscript=no -device e1000,netdev=vmnic${INSTANCE_ID},mac=52:54:00:12:34:5${INSTANCE_ID},romfile="
+    #add_opts "-netdev user,id=vmnic${INSTANCE_ID},hostfwd=tcp::${PORT}-:80 -device e1000,netdev=vmnic${INSTANCE_ID},romfile="
     #add_opts "-netdev user,id=vmnic"
     #add_opts " -device virtio-net-pci,disable-legacy=on,iommu_platform=true,netdev=vmnic,romfile="
 fi
+
+#Define the intance ID of the VM and pass it as parameter to the VM so that l can retrieve the instance ID in the VM
+FW_CFG_ID="${INSTANCE_ID}"
+echo "$FW_CFG_ID" > /tmp/vm_id.txt
+add_opts "-fw_cfg name=opt/com.example.id,file=/tmp/vm_id.txt"
 
 # If harddisk file is specified then add the HDD drive
 if [ -n "${HDA}" ]; then
@@ -314,9 +313,10 @@ fi
 if [ "${KERNEL_FILE}" != "" ]; then
         add_opts "-kernel $KERNEL_FILE"
         if [ -n "$APPEND" ]; then
+                APPEND="$APPEND node_id=${INSTANCE_ID}" #also add the instance ID here
                 add_opts "-append \"$APPEND\""
         else
-                add_opts "-append \"console=ttyS0 earlyprintk=serial root=/dev/sda2\""
+                add_opts "-append \"console=ttyS0 earlyprintk=serial root=/dev/sda2 node_id=${INSTANCE_ID}\"" #also add the instance ID here
         fi
         [ -n "${INITRD_FILE}" ] && add_opts "-initrd ${INITRD_FILE}"
 fi
