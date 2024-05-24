@@ -11,22 +11,27 @@ install_packages() {
 }
 
 configure_nginx() {
+  default_nginx_config="/etc/nginx/sites-enabled/default"
+  backup_dir="/etc/nginx/disabled-configs"
+
+  [ ! -d "$backup_dir" ] && mkdir -p "$backup_dir"
+
+  [ -e "$default_nginx_config" ] && mv "$default_nginx_config" "$backup_dir/default.disabled"
+
   nginx_config="/etc/nginx/sites-available/test-app"
   [ -e "$nginx_config" ] && rm -f "$nginx_config"
 
   cat <<EOF > "$nginx_config"
 server {
-    listen 80;
-    server_name localhost;
+    listen 80 default_server;
+    listen [::]:80 default_server;
     root /var/www/html/test-app;
     index index.php;
-    #access_log /var/log/nginx/full_access.log full;
 
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
     }
     
-    #Interprets php page using fastcgi-php before sending them to the client
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
