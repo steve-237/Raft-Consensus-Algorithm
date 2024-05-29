@@ -85,7 +85,7 @@ for request_type in ['POST', 'GET']:
     avg_response_times = {server: data['Response Time'].mean() for server, data in data_summary[request_type].items()}
     plt.bar(avg_response_times.keys(), avg_response_times.values(), color=plot_colors[:len(avg_response_times)])
     plt.xlabel('Server')
-    plt.ylabel('Average Response Time')
+    plt.ylabel('Average Response Time (second)')
     plt.title(f'Average Response Time for {request_type} Requests')
     plt.xticks(rotation=45)
     plt.savefig(os.path.join(output_dir, f'avg_response_time_{request_type}.pdf'))
@@ -96,7 +96,7 @@ for request_type in ['POST', 'GET']:
     plt.figure()
     data_to_plot = [data['Response Time'] for data in data_summary[request_type].values()]
     plt.boxplot(data_to_plot, labels=data_summary[request_type].keys())
-    plt.xlabel('Server')
+    plt.xlabel('Server (second)')
     plt.ylabel('Response Time')
     plt.title(f'Response Time Distribution for {request_type} Requests')
     plt.xticks(rotation=45)
@@ -109,7 +109,7 @@ for request_type in ['POST', 'GET']:
     for server, data in data_summary[request_type].items():
         plt.plot(data.index + 1, data['Response Time'], label=server)
     plt.xlabel('Resquest Number')
-    plt.ylabel('Response Time')
+    plt.ylabel('Response Time (second)')
     plt.title(f'Response Time Variation by Request Number for {request_type} Requests')
     plt.legend()
     plt.savefig(os.path.join(output_dir, f'response_time_variation_{request_type}.pdf'))
