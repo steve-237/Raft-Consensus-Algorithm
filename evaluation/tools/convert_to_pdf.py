@@ -96,8 +96,8 @@ for request_type in ['POST', 'GET']:
     plt.figure()
     data_to_plot = [data['Response Time'] for data in data_summary[request_type].values()]
     plt.boxplot(data_to_plot, labels=data_summary[request_type].keys())
-    plt.xlabel('Server (second)')
-    plt.ylabel('Response Time')
+    plt.xlabel('Server')
+    plt.ylabel('Response Time (second)')
     plt.title(f'Response Time Distribution for {request_type} Requests')
     plt.xticks(rotation=45)
     plt.savefig(os.path.join(output_dir, f'boxplot_response_time_{request_type}.pdf'))
