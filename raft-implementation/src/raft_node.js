@@ -31,6 +31,22 @@ app.get('/isAvailable', (req, res) => {
 });
 
 /**
+ * deliver last log index
+ */
+app.get('/lastlogindex', (req, res) => {
+    const lastIndex = raftNode.log.getLastIndex();
+    res.json({ lastIndex });
+});
+
+/**
+ * deliver term
+ */
+app.get('/getTerm', (req, res) => {
+    const term = raftNode.currentTerm;
+    res.json({ term });
+});
+
+/**
  * Handles the request for voting from a candidate node.
  * Responds to the candidate with a vote grant or denial based on the Raft protocol.
  */
@@ -72,10 +88,10 @@ app.post('/append-entries', async (req, res) => {
     raftNode.votedFor = null;
 
     const prevLogEntry = raftNode.log.getEntry(prevLogIndex);
-    console.log("previous log for Follower node : ", prevLogEntry);
-    if (term < raftNode.currentTerm || (entries && (!prevLogEntry || prevLogEntry.term !== prevLogTerm))) {
+    if (term < raftNode.currentTerm || prevLogEntry === null || prevLogEntry.term !== prevLogTerm) {
         console.log(`Append from ${leaderId} rejected`);
         res.status(200).json({ Node: raftNode.id, term: raftNode.currentTerm, success: false });
+        raftNode.resetTimer();
         return;
     }
 
@@ -91,36 +107,31 @@ app.post('/append-entries', async (req, res) => {
         //raftNode.persistLog();
     }
 
-    console.log('Leader Commit ', leaderCommitIndex);
-
     if (leaderCommitIndex > raftNode.commitIndex) {
         console.log(`leaderCommitIndex: ${leaderCommitIndex}; commitIndex: ${raftNode.commitIndex} lastApplied: ${raftNode.lastApplied}`);
-
         raftNode.commitIndex = Math.min(leaderCommitIndex, raftNode.log.getLastIndex());
 
-        // Apply entries to the state Machine here
+        // Apply entries to the state Machine
         while (raftNode.lastApplied < raftNode.commitIndex) {
-
             raftNode.lastApplied++;
             console.log(`Apply: ${raftNode.lastApplied}`);
-            console.log(`The new log entry has been applied on the ${raftNode.state}`);
-
-            delete prevLogEntry.request.headers.host;
-            prevLogEntry.request.headers.host = `localhost:${PORT}`;
-
-            axios.post(prevLogEntry.request.url, prevLogEntry.request.body, {
-                headers: prevLogEntry.request.headers,
+            let entry = raftNode.log.getEntry(raftNode.lastApplied);
+            if (entry.request) {
+                delete entry.request.headers.host;
+            }
+            entry.request.headers.host = `localhost:${PORT}`;
+            axios.post(entry.request.url, entry.request.body, {
+                headers: entry.request.headers,
                 maxRedirects: 0,
                 validateStatus: null,
             }).then((response) => {
-
-                let responseObject = responseMap.get(prevLogEntry.request.headers.requestid);
-
+                let responseObject = responseMap.get(entry.request.headers.requestid);
                 if (responseObject) {
                     responseObject.writeHead(response.status, response.headers);
                     responseObject.end(response.data);
-                    responseMap.delete(prevLogEntry.request.headers.requestid);
+                    responseMap.delete(entry.request.headers.requestid);
                 }
+                console.log(`The new log entry has been applied on the ${raftNode.state}`);
             }).catch(error => {
                 console.error('Error applying the request to the application:', error.message);
             });
@@ -137,30 +148,20 @@ app.all('*', async function (req, res, next) {
 
     const userAgent = req.headers['user-agent'];
     let requestId = null;
-
     //Handles client request
     if (!userAgent.includes('axios')) {
-
-        console.log('Request', req.protocol, req.method, req.url);
-
         let request = {};
-
         if (req.method === 'POST') {
-
             if (raftNode.state !== 'LEADER') {
-
                 //generate random ID for each POST request
                 requestId = uuidv4();
                 responseMap.set(requestId, res);
-
                 console.log(`Redirection of the request to the leader: Node${raftNode.leaderId}`);
                 req.headers['requestid'] = requestId;
-
                 proxy.web(req, res, {
                     target: `${req.protocol}://${raftNode.leaderIpAddress}:300${raftNode.leaderId}`,
                     selfHandleResponse: true
                 });
-
             } else {
                 if (!req.headers.requestid) {
                     requestId = uuidv4();
@@ -175,7 +176,6 @@ app.all('*', async function (req, res, next) {
                     body += chunk.toString();
                 });
                 req.on('end', () => {
-
                     request = {
                         url: req.url,
                         body: body,
@@ -188,13 +188,10 @@ app.all('*', async function (req, res, next) {
                         console.error('Error appending the Log Entry:', error.message);
                         res.status(500).send('Error appending the Log Entry');
                     }
-
                 });
 
                 const checkMajority = setInterval(async () => {
-
                     if (raftNode.majorityConfirmed) {
-
                         clearInterval(checkMajority);
                         delete request.headers.host;
                         request.headers.host = `localhost:${PORT}`;
@@ -206,45 +203,44 @@ app.all('*', async function (req, res, next) {
                         })
 
                         let responseObject = responseMap.get(request.headers.requestid);
-
                         if (responseObject) {
                             responseObject.writeHead(response.status, response.headers);
                             responseObject.end(response.data);
                             responseMap.delete(request.headers.requestid);
                         }
-
                         console.log('[Request Applied within the application.]', response.data);
                     }
                 }, 10);
             }
         } else {
-            proxy.web(req, res, { target: `${req.protocol}://${req.hostname}` });
+            proxy.web(req, res, { target: `http://localhost` });
         }
     } else {
         next();
     }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Node running on port ${PORT}`);
-
-    const interfaceName = 'enp0s3';
+    const interfaceName = 'enp0s3'; //Interface to change to enp0s2 before uploading it to Epyc
     const ipAddress = getIPAddress(interfaceName);
     console.log(`IP address of ${interfaceName}: ${ipAddress}`);
-
     const nodeData = {
         nodeId: NODE_ID,
         nodeIpAddress: ipAddress
     };
-
-    axios.post(`http://localhost:3006/register`, nodeData)
-        .then(() => {
+    let isNodeRegistered = false;
+    while (!isNodeRegistered) {
+        try {
+            await axios.post(`http://localhost:3006/register`, nodeData); //IP to change before uploading to Epyc
             console.log('Server registered with manager.');
-        })
-        .catch(error => {
+            isNodeRegistered = true;
+        } catch (error) {
             console.error('Error registering with manager:', error.message);
-        });
-
+            console.log('Retrying in 1 second...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
     //raftNode.loadLog();
     raftNode.init();
 });

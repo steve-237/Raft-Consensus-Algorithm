@@ -28,6 +28,7 @@ app.post('/register', (req, res) => {
         console.log(`Registered servers: `, Array.from(registeredNodes));
     } else {
         console.error(`Server ${nodeId} already registered.`);
+        res.sendStatus(200);
     }
 
     const registeredNodesList = Array.from(registeredNodes);

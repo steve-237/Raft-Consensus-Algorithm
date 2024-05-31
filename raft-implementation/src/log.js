@@ -1,11 +1,10 @@
 const LogEntry = require('./logEntry');
 
 /**
- * Handle log.
+ * Handle log of each node.
  */
 class Log {
     constructor() {
-        this.firstIndex = 0;
 
         /**
          * Log
@@ -37,11 +36,10 @@ class Log {
      * @returns - A log entry
      */
     getEntry(index) {
-        let offset = index - this.firstIndex;
-        if (offset >= this.log.length || offset < 0) {
+        if (index >= this.log.length || index < 0) {
             return null;
         }
-        return this.log[offset];
+        return this.log[index];
     }
 
     /**
@@ -78,7 +76,7 @@ class Log {
      * @returns - First term
      */
     getFirstIndex() {
-        return this.firstIndex;
+        return 1;
     }
 
     /**
@@ -113,22 +111,20 @@ class Log {
      */
     storeEntries(entries) {
         for (const entry of entries) {
-            const offset = entry.index - this.firstIndex;
-            if (offset < 0) {
-                throw new Error("Index is smaller than the first index of the log");
+            if (entry.index  < 0) {
+                return;
             }
-            if (offset < this.log.length) {
-                if (this.log[offset].index === entry.index &&
-                    this.log[offset].term === entry.term &&
-                    this.log[offset].request === entry.request) {
+            if (entry.index  < this.log.length) {
+                if (this.log[entry.index ].index === entry.index &&
+                    this.log[entry.index ].term === entry.term &&
+                    this.log[entry.index ].request === entry.request) {
                     continue;
                 }
-                for (let i = this.log.length - 1; i >= offset; i--) {
+                for (let i = this.log.length - 1; i >= entry.index ; i--) {
                     this.log.pop();
                 }
             }
             this.addEntry(entry);
-            console.log("The new log entry have been store :", this.log)
         }
     }
 

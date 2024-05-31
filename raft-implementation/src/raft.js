@@ -5,23 +5,23 @@ const axios = require('axios'),
     proxy = httpProxy.createProxyServer({}),
     Log = require('./log'),
     fs = require('fs');
-
+    
+/**
+ * Raft protocol
+ */
 class RaftNode {
     constructor(id) {
         this.id = id;
         this.state = raftStates.FOLLOWER;
 
-        //peristent on all servers
         this.currentTerm = 0;
         this.log = new Log();
 
-        //volatile on all servers
-        this.commitIndex = 0; //index of highest log entry known to be commited
-        this.lastApplied = 0; //index of highest log entry applied to state machine
+        this.commitIndex = 0; 
+        this.lastApplied = 0; 
 
-        //volatile on leaders
-        this.nextIndex = {}; //for each server, index of the next log entry to send to that server (initialized to leader last log index + 1)
-        this.matchIndex = {}; //for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
+        this.nextIndex = {};
+        this.matchIndex = {};
 
         this.leaderId = null;
         this.leaderIpAddress = null;
@@ -37,7 +37,7 @@ class RaftNode {
     }
 
     /**
-     * Sets the state of the Raft node to the provided state.
+     * Set the state of the Raft node to the provided state.
      * @param {string} state - The new state of the Raft node.
      */
     setState(state) {
@@ -45,7 +45,7 @@ class RaftNode {
     }
 
     /**
-     * Starts the election process.
+     * Start the election process.
      */
     startElection() {
         this.votesReceived = 0;
@@ -89,16 +89,11 @@ class RaftNode {
                         }
                     }
 
-                    console.log('Contenu de nodes', this.nodes)
-
                     this.nodes.forEach(node => {
                         const nodeId = node.nodeId
                         this.nextIndex[nodeId] = this.log.getLastIndex() + 1;
                         this.matchIndex[nodeId] = 0;
                     })
-
-                    console.log("Contenu de this.nextIndex :", this.nextIndex);
-                    console.log("Contenu de this.matchIndex :", this.matchIndex);
                     console.log(`Node ${this.id} became the leader for term ${this.currentTerm}`);
                     this.resetTimerNow();
                 }
@@ -109,7 +104,7 @@ class RaftNode {
     }
 
     /**
-     * Sends vote request to specific node.
+     * Send vote request to specific node.
      * @param {object} node - Identifier of the node to which the vote request should be send.
      */
     async requestVote(node) {
@@ -130,7 +125,7 @@ class RaftNode {
     }
 
     /**
-     * Processes the response to a request for a vote.
+     * Handle the response to a request for a vote.
      * @param {object} response - Vote response of a node.
      */
     handleVoteResponse(response) {
@@ -148,7 +143,7 @@ class RaftNode {
     }
 
     /**
-     * Resets the timer used to manage timeouts in the Raft protocol.
+     * Reset the timer used to manage timeouts in the Raft protocol.
      */
     resetTimer() {
         if (this.timer !== null) {
@@ -182,7 +177,7 @@ class RaftNode {
      * @returns - The timeout to keep the leader alive if the Node is a leader or the timeout to start a new election if the Node is a follower
      */
     getTimeout() {
-        return this.state === raftStates.LEADER ? 3000 : Math.floor(Math.random() * (8000 - 5000) + 5000);
+        return this.state === raftStates.LEADER ? 10 : Math.floor(Math.random() * (5000 - 3500) + 3500);
     }
 
     /**
@@ -215,7 +210,7 @@ class RaftNode {
                             this.currentTerm = response.data.term;
                             this.setState(raftStates.FOLLOWER);
                             return;
-                        } else if (!response.data.success) {
+                        } else if (!response.data.success || response.data.term <  this.currentTerm) {
                             await this.replicateLog(node);
                         }
                     });
@@ -233,15 +228,18 @@ class RaftNode {
      */
     async replicateLog(node) {
         const lastLogIndex = this.log.getLastIndex();
-        console.log("Last log Index : " + lastLogIndex);
-        console.log("Next Index : " + this.nextIndex[node.nodeId]);
+        const response = await axios.get(`http://${node.nodeIpAddress}:300${node.nodeId}/getTerm`);
+        const nodeTerm = response.data.term;
+        if (this.nextIndex[node.nodeId] === undefined || nodeTerm < this.currentTerm) {
+            const response = await axios.get(`http://${node.nodeIpAddress}:300${node.nodeId}/lastlogindex`);
+            this.nextIndex[node.nodeId] = response.data.lastIndex + 1;
+        }
 
         while (lastLogIndex >= this.nextIndex[node.nodeId]) {
-            const next = this.nextIndex[node.nodeId];
-            let result;
+            let nextIndex = this.nextIndex[node.nodeId];
 
             try {
-                const prevEntry = this.log.getEntry(next - 1);
+                const prevEntry = this.log.getEntry(nextIndex - 1);
                 console.log("Previous Entry Index: " + prevEntry.index);
                 const prevLogIndex = prevEntry.index;
                 const prevLogTerm = prevEntry.term;
@@ -251,34 +249,26 @@ class RaftNode {
                     leaderId: this.id,
                     prevLogIndex: prevLogIndex,
                     prevLogTerm: prevLogTerm,
-                    entries: this.log.getEntriesFrom(next),
+                    entries: this.log.getEntriesFrom(nextIndex),
                     leaderCommitIndex: this.commitIndex
                 });
 
-                result = response.data;
-
-                if (result.term > this.currentTerm) {
-                    this.currentTerm = result.term;
+                if (response.data.term > this.currentTerm) {
+                    this.currentTerm = response.data.term;
                     this.setState(raftStates.FOLLOWER);
                     return;
                 }
 
-                if (result.success) {
+                if (response.data.success) {
                     this.matchIndex[node.nodeId] = lastLogIndex;
                     this.nextIndex[node.nodeId] = this.matchIndex[node.nodeId] + 1;
                 } else {
                     this.nextIndex[node.nodeId] -= 1;
-                    if (this.nextIndex[node.nodeId] < this.log.getFirstIndex()) {
-                        console.log('Decrement nextIndex and retry');
-                        this.replicateLog(node);
-                    }
                 }
             } catch (error) {
                 console.error(`Append Entries failed for Node${node.nodeId} : ${error.message}`);
                 break;
             }
-
-            break;
         }
     }
 
@@ -306,43 +296,40 @@ class RaftNode {
             }
         }
 
-        let N = -1;
+        while (true) {
+            let N = this.commitIndex + 1;
+            let matchCount = 0;
 
-        for (let i = this.commitIndex + 1; i < this.log.getLogLength(); i++) {
-            let count = 0;
-            if (this.log.getEntry(i).term === this.currentTerm) {
-
-                Object.keys(this.matchIndex).forEach(nodeId => {
-                    nodeId = parseInt(nodeId);
-                    if (this.matchIndex[nodeId] >= i) {
-                        count++;
-                    }
-                })
-
-                if (count > Object.keys(this.matchIndex).length / 2) {
-                    N = i;
+            Object.values(this.matchIndex).forEach(matchIndex => {
+                if (matchIndex >= N) {
+                    matchCount++;
                 }
+            });
+
+            if (matchCount > Math.floor(this.nodes.length / 2) && this.log.getEntry(N) && this.log.getEntry(N).term === this.currentTerm) {
+                this.commitIndex++;
+                this.majorityConfirmed = true;
+                this.lastApplied++;
+                console.log(this.log.getLog());
+                this.nextIndex[this.id] = this.matchIndex[this.id] + 1;
+            } else {
+                break;
             }
-        }
 
-        // If such N is found, update commitIndex
-        if (N !== -1) {
-            this.commitIndex = N;
-            this.majorityConfirmed = true;
-            this.lastApplied++;
-            console.log(this.log.getLog());
-            this.nextIndex[this.id] = this.matchIndex[this.id] + 1;
-            console.log("Match index : ", this.matchIndex);
-            console.log("Next index : ", this.nextIndex);
+            this.sendHeartbeats();
         }
-
-        this.sendHeartbeats();
     }
 
+    /**
+     * Store the log in a json file
+     */
     persistLog() {
         fs.writeFileSync(`log_node_${this.id}.json`, JSON.stringify(this.log));
     }
 
+    /**
+     * Load the log store in the json file
+     */
     loadLog() {
         try {
             this.log.loadLog(JSON.parse(fs.readFileSync(`log_node_${this.id}.json`)).log);
@@ -357,7 +344,6 @@ class RaftNode {
      * Start the process of checking the availability of nodes in the cluster - Starting point for each node.
      */
     async init() {
-        //await this.fetchNodes();
         while (this.nodes.length < 3) {
             console.log("Waiting for at least 3 nodes...");
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -405,8 +391,6 @@ class RaftNode {
      */
     runRaft() {
         if (this.state === raftStates.LEADER) {
-            console.log("Commit index : " + this.commitIndex)
-            console.log("Last index : " + this.log.getLastIndex())
             if (this.commitIndex < this.log.getLastIndex()) {
                 this.replicateLogs();
             } else {
