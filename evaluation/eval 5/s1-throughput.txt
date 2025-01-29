@@ -1,2 +1,0 @@
-Server: s1, POST Duration: 37 seconds, POST Throughput: 108.10 requests/second
-Server: s1, GET Duration: 36 seconds, GET Throughput: 111.11 requests/second

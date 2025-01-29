@@ -1,2 +1,0 @@
-Server: s3, POST Duration: 32 seconds, POST Throughput: 31.25 requests/second
-Server: s3, GET Duration: 10 seconds, GET Throughput: 100.00 requests/second
